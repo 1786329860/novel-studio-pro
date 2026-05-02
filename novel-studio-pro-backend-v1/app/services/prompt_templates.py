@@ -4,6 +4,10 @@ import json
 from typing import Any
 
 
+# ======================================================================
+# 原有 Prompt 模板（保留向后兼容）
+# ======================================================================
+
 def build_outline_expansion_prompt(project: dict[str, Any]) -> list[dict[str, str]]:
     payload = {
         "title": project.get("title"),
@@ -64,4 +68,507 @@ def build_chapter_generation_prompt(project: dict[str, Any], options: dict[str, 
                 f"{json.dumps(context, ensure_ascii=False)}"
             ),
         },
+    ]
+
+
+# ======================================================================
+# 多 Agent 系统 Prompt 模板
+# ======================================================================
+
+def build_constraint_prompt(project: dict[str, Any]) -> list[dict[str, str]]:
+    """约束生成 Agent 的 Prompt。
+
+    角色: 小说自动化创作系统的【约束生成 Agent】
+    任务: 分析当前项目状态，为即将写作的下一章生成精确的约束条件。
+
+    Args:
+        project: 完整的项目数据
+
+    Returns:
+        消息列表
+    """
+    story_bible = project.get("storyBible", {})
+    forbidden_rules = story_bible.get("forbiddenRules", [])
+
+    context = {
+        "title": project.get("title", ""),
+        "genre": story_bible.get("genre", ""),
+        "currentChapter": len(project.get("chapters", [])),
+        "mainTheme": story_bible.get("mainTheme", ""),
+        "mainConflict": story_bible.get("mainConflict", ""),
+        "forbiddenRules": forbidden_rules,
+        "characters": [
+            {
+                "name": c.get("name", ""),
+                "role": c.get("role", ""),
+                "currentGoal": c.get("currentGoal", ""),
+                "emotion": c.get("emotion", ""),
+                "agencyScore": c.get("agencyScore", 0),
+                "dropoutRisk": c.get("dropoutRisk", 0),
+                "lastAppearedChapter": c.get("lastAppearedChapter", c.get("lastAppeared", 0)),
+            }
+            for c in project.get("characters", [])[:8]
+        ],
+        "foreshadows": [
+            {
+                "id": f.get("id", ""),
+                "name": f.get("name", ""),
+                "status": f.get("status", ""),
+                "importance": f.get("importance", ""),
+                "risk": f.get("risk", 0),
+                "plannedPayoffChapter": f.get("plannedPayoffChapter", f.get("plannedPayoff", 999)),
+                "nextAction": f.get("nextAction", ""),
+            }
+            for f in project.get("foreshadows", [])[:10]
+        ],
+        "truthSource": project.get("truthSource", {}),
+        "recentEvents": project.get("events", [])[-8:],
+        "relationships": project.get("relationships", [])[:6],
+    }
+
+    system_prompt = (
+        "你是小说自动化创作系统的【约束生成 Agent】。\n\n"
+        "## 角色定位\n"
+        "你是一位经验丰富的小说编辑，擅长在写作前为每一章制定精确的约束条件，"
+        "确保故事的一致性、节奏感和伏笔管理。\n\n"
+        "## 任务\n"
+        "分析当前项目状态，为即将写作的下一章生成精确的约束条件。\n\n"
+        "## 输出格式\n"
+        "你必须输出严格 JSON，不要写任何解释文字。JSON 结构如下：\n"
+        "{\n"
+        '  "must_happen": ["本章必须发生的事件列表，2-5条"],\n'
+        '  "must_not_happen": ["本章禁止发生的事件列表，2-4条"],\n'
+        '  "character_allocation": {"角色名": {"min_ratio": 0.1, "max_ratio": 0.4, "scene_type": "主线/支线/过渡"}},\n'
+        '  "pov_plan": {"primary": "主视角角色名", "secondary": "次视角角色名", "ratio": "60/30/10"},\n'
+        '  "foreshadow_actions": [{"foreshadow_id": "伏笔ID", "action": "轻微回响/推进/回收", "detail": "具体处理方式"}],\n'
+        '  "style_constraints": ["文风要求列表"],\n'
+        '  "continuity_requirements": ["必须保持的连续性要求"]\n'
+        "}\n\n"
+        "## 关键规则\n"
+        "1. must_not_happen 必须包含 forbiddenRules 中的所有禁止项\n"
+        "2. 角色分配必须考虑 dropoutRisk 高的角色需要更多出场\n"
+        "3. 伏笔处理不能在 plannedPayoffChapter 之前回收\n"
+        "4. 视角分配要考虑角色的 knowledgeState，不能让角色知道不该知道的事\n"
+        "5. 真相源中标记为禁止的信息绝对不能在本章揭露\n"
+        "6. 每章至少推动主线、角色关系或伏笔之一\n"
+        "7. 所有比例之和不超过 1.0"
+    )
+
+    user_prompt = (
+        "请根据以下项目状态，为下一章生成约束条件：\n\n"
+        f"{json.dumps(context, ensure_ascii=False, indent=2)}"
+    )
+
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+
+def build_director_prompt(
+    project: dict[str, Any],
+    constraints: dict[str, Any],
+) -> list[dict[str, str]]:
+    """导演稿 Agent 的 Prompt。
+
+    角色: 小说自动化创作系统的【导演稿 Agent】
+    任务: 根据约束条件和项目状态，为下一章规划 3-6 个场景的导演稿。
+
+    Args:
+        project: 完整的项目数据
+        constraints: 约束 Agent 的输出
+
+    Returns:
+        消息列表
+    """
+    story_bible = project.get("storyBible", {})
+
+    context = {
+        "title": project.get("title", ""),
+        "genre": story_bible.get("genre", ""),
+        "styleProfile": story_bible.get("styleProfile", ""),
+        "mainTheme": story_bible.get("mainTheme", ""),
+        "mainConflict": story_bible.get("mainConflict", ""),
+        "endingDirection": story_bible.get("endingDirection", ""),
+        "currentChapter": len(project.get("chapters", [])),
+        "characters": [
+            {
+                "name": c.get("name", ""),
+                "role": c.get("role", ""),
+                "personality": c.get("personality", ""),
+                "currentGoal": c.get("currentGoal", ""),
+                "emotion": c.get("emotion", ""),
+            }
+            for c in project.get("characters", [])[:6]
+        ],
+        "constraints": constraints,
+        "recentChapterSummaries": [
+            {
+                "number": c.get("number", 0),
+                "title": c.get("title", ""),
+                "summary": (c.get("summary") or c.get("text", ""))[:200],
+            }
+            for c in project.get("chapters", [])[-3:]
+        ],
+    }
+
+    system_prompt = (
+        "你是小说自动化创作系统的【导演稿 Agent】。\n\n"
+        "## 角色定位\n"
+        "你是一位资深的影视导演，擅长将故事大纲拆解为精确的场景蓝图。"
+        "你关注场景的节奏、情绪弧线、角色互动和悬念布局。\n\n"
+        "## 任务\n"
+        "根据约束条件和项目状态，为下一章规划 3-6 个场景的导演稿。\n\n"
+        "## 输出格式\n"
+        "你必须输出严格 JSON，不要写任何解释文字。JSON 结构如下：\n"
+        "{\n"
+        '  "chapter_title": "章节标题（可选，8字以内）",\n'
+        '  "scenes": [\n'
+        '    {\n'
+        '      "number": 1,\n'
+        '      "goal": "场景目标（一句话描述）",\n'
+        '      "conflict": "核心冲突（一句话描述）",\n'
+        '      "turning_point": "转折点（可选，非每个场景都有）",\n'
+        '      "hook": "场景结尾钩子（吸引读者继续阅读）",\n'
+        '      "characters": ["出场角色名列表"],\n'
+        '      "location": "场景地点",\n'
+        '      "time": "时间（如：清晨、午后、深夜）",\n'
+        '      "mood": "情绪基调（如：紧张、温馨、压抑）"\n'
+        '    }\n'
+        "  ],\n"
+        '  "chapter_goal": "本章总体目标（一句话）",\n'
+        '  "chapter_arc": "本章情感弧线描述",\n'
+        '  "pacing": "节奏描述（如：缓起-渐紧-高潮-余韵）"\n'
+        "}\n\n"
+        "## 关键规则\n"
+        "1. 场景数量控制在 3-6 个，根据约束中的 must_happen 合理分配\n"
+        "2. 每个场景必须遵守约束中的 character_allocation\n"
+        "3. 场景的视角必须符合 pov_plan\n"
+        "4. 伏笔处理必须按 foreshadow_actions 的指令安排到对应场景\n"
+        "5. 情感弧线要有起伏，不能平淡\n"
+        "6. 最后一个场景必须有钩子，吸引读者看下一章\n"
+        "7. 场景之间要有自然的过渡逻辑\n"
+        "8. 绝对不能安排违反 must_not_happen 的内容"
+    )
+
+    user_prompt = (
+        "请根据以下项目状态和约束条件，生成本章的导演稿：\n\n"
+        f"{json.dumps(context, ensure_ascii=False, indent=2)}"
+    )
+
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+
+def build_writer_prompt(
+    project: dict[str, Any],
+    constraints: dict[str, Any],
+    director_plan: dict[str, Any],
+) -> list[dict[str, str]]:
+    """正文写作 Agent 的 Prompt。
+
+    角色: 小说自动化创作系统的【正文写作 Agent】
+    任务: 根据导演稿、约束条件和项目状态，撰写高质量的章节正文。
+
+    Args:
+        project: 完整的项目数据
+        constraints: 约束 Agent 的输出
+        director_plan: 导演 Agent 的输出
+
+    Returns:
+        消息列表
+    """
+    story_bible = project.get("storyBible", {})
+    chapters = project.get("chapters", [])
+
+    context = {
+        "title": project.get("title", ""),
+        "genre": story_bible.get("genre", ""),
+        "styleProfile": story_bible.get("styleProfile", ""),
+        "mainTheme": story_bible.get("mainTheme", ""),
+        "constraints": constraints,
+        "directorPlan": director_plan,
+        "characters": [
+            {
+                "name": c.get("name", ""),
+                "role": c.get("role", ""),
+                "personality": c.get("personality", ""),
+                "emotion": c.get("emotion", ""),
+                "speakingStyle": "待推断",
+            }
+            for c in project.get("characters", [])[:6]
+        ],
+        "recentChapterSummaries": [
+            {
+                "number": c.get("number", 0),
+                "title": c.get("title", ""),
+                "summary": (c.get("summary") or c.get("text", ""))[:300],
+            }
+            for c in chapters[-3:]
+        ],
+        "lastChapterTail": chapters[-1].get("text", "")[-500:] if chapters else "",
+        "forbiddenRules": story_bible.get("forbiddenRules", []),
+        "foreshadows": [
+            {
+                "name": f.get("name", ""),
+                "status": f.get("status", ""),
+                "nextAction": f.get("nextAction", ""),
+            }
+            for f in project.get("foreshadows", [])[:8]
+        ],
+        "relationships": project.get("relationships", [])[:6],
+    }
+
+    system_prompt = (
+        "你是小说自动化创作系统的【正文写作 Agent】。\n\n"
+        "## 角色定位\n"
+        "你是一位文笔精湛的小说家，擅长将导演稿转化为引人入胜的正文。"
+        "你的文字有画面感、节奏感和情绪张力，读者会忘记自己在阅读。\n\n"
+        "## 任务\n"
+        "根据导演稿、约束条件和项目状态，撰写高质量的章节正文。\n\n"
+        "## 输出格式\n"
+        "你必须输出严格 JSON，不要写任何解释文字。JSON 结构如下：\n"
+        "{\n"
+        '  "text": "正文内容（3000-8000字）",\n'
+        '  "word_count": 5000,\n'
+        '  "dialogue_ratio": 0.3,\n'
+        '  "narrative_style": "第三人称有限视角"\n'
+        "}\n\n"
+        "## 写作规则\n"
+        "1. 严格按照导演稿的场景顺序和目标写作\n"
+        "2. 遵守所有约束条件（must_happen / must_not_happen）\n"
+        "3. 角色分配比例必须符合 character_allocation\n"
+        "4. 视角切换必须符合 pov_plan\n"
+        "5. 伏笔处理必须按 foreshadow_actions 的指令执行\n"
+        "6. 文风必须符合 style_constraints\n"
+        "7. 与上一章结尾自然衔接\n"
+        "8. 正文必须包含足够的感官细节和情绪描写\n"
+        "9. 对话要自然，符合角色性格\n"
+        "10. 绝对避免 AI 味重的表达（如'不禁'、'竟然'、'仿佛'等过度使用）\n"
+        "11. 每个场景之间要有自然的过渡\n"
+        "12. 最后一个场景的结尾要有钩子\n"
+        "13. 字数控制在 3000-8000 字之间\n"
+        "14. 对话占比控制在 20%-40% 之间\n"
+        "15. 不要在正文中直接解释伏笔，要自然融入叙事"
+    )
+
+    user_prompt = (
+        "请根据以下导演稿和约束条件，撰写章节正文：\n\n"
+        f"{json.dumps(context, ensure_ascii=False, indent=2)}"
+    )
+
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+
+def build_review_prompt(
+    project: dict[str, Any],
+    chapter_text: str,
+    constraints: dict[str, Any],
+    director_plan: dict[str, Any],
+) -> list[dict[str, str]]:
+    """质量检查 Agent 的 Prompt。
+
+    角色: 小说自动化创作系统的【质量检查 Agent】
+    任务: 对已生成的正文进行多维度质量检查。
+
+    Args:
+        project: 完整的项目数据
+        chapter_text: 已生成的章节正文
+        constraints: 约束 Agent 的输出
+        director_plan: 导演 Agent 的输出
+
+    Returns:
+        消息列表
+    """
+    story_bible = project.get("storyBible", {})
+    chapters = project.get("chapters", [])
+
+    context = {
+        "chapterText": chapter_text,
+        "chapterNumber": len(chapters) + 1,
+        "directorPlan": director_plan,
+        "constraints": constraints,
+        "forbiddenRules": story_bible.get("forbiddenRules", []),
+        "characters": [
+            {
+                "name": c.get("name", ""),
+                "role": c.get("role", ""),
+                "personality": c.get("personality", ""),
+            }
+            for c in project.get("characters", [])[:8]
+        ],
+        "foreshadows": [
+            {
+                "id": f.get("id", ""),
+                "name": f.get("name", ""),
+                "status": f.get("status", ""),
+            }
+            for f in project.get("foreshadows", [])[:10]
+        ],
+        "truthSource": project.get("truthSource", {}),
+        "recentChapterSummaries": [
+            {
+                "number": c.get("number", 0),
+                "title": c.get("title", ""),
+                "summary": (c.get("summary") or c.get("text", ""))[:200],
+            }
+            for c in chapters[-3:]
+        ],
+        "relationships": project.get("relationships", [])[:6],
+    }
+
+    system_prompt = (
+        "你是小说自动化创作系统的【质量检查 Agent】。\n\n"
+        "## 角色定位\n"
+        "你是一位严格的文学编辑，对小说质量有极高的标准。"
+        "你会从连续性、视角、角色主动性、禁止揭露、伏笔处理、约束遵守、AI 味等维度进行检查。\n\n"
+        "## 任务\n"
+        "对已生成的正文进行多维度质量检查，给出评分和修改建议。\n\n"
+        "## 输出格式\n"
+        "你必须输出严格 JSON，不要写任何解释文字。JSON 结构如下：\n"
+        "{\n"
+        '  "total_score": 85,\n'
+        '  "tests": [\n'
+        '    {"name": "检查项名称", "passed": true, "score": 90, "message": "检查结果描述"}\n'
+        "  ],\n"
+        '  "rewrite_suggestions": ["修改建议1", "修改建议2"],\n'
+        '  "passed": true\n'
+        "}\n\n"
+        "## 检查维度\n"
+        "1. 连续性检查: 与前文是否有矛盾（时间线、人物位置、已知信息）\n"
+        "2. 视角稳定性: 是否按照 pov_plan 切换视角，是否有越界\n"
+        "3. 角色主动性: 角色是否有自主行动，是否被动接受安排\n"
+        "4. 禁止揭露检查: 是否违反 forbiddenRules，是否提前揭露真相\n"
+        "5. 伏笔处理检查: 是否按 foreshadow_actions 处理了伏笔\n"
+        "6. 约束遵守检查: 是否满足 must_happen，是否违反 must_not_happen\n"
+        "7. AI 味检测: 是否存在模板化表达、过度修辞、不自然的描写\n\n"
+        "## 评分标准\n"
+        "- 90-100: 优秀，无需修改\n"
+        "- 80-89: 良好，可有少量修改\n"
+        "- 70-79: 及格，建议修改\n"
+        "- 60-69: 不及格，需要重写\n"
+        "- 60以下: 严重问题，必须重写\n\n"
+        "passed 判定: total_score >= 80 且所有关键检查项 passed"
+    )
+
+    user_prompt = (
+        "请对以下章节正文进行质量检查：\n\n"
+        f"{json.dumps(context, ensure_ascii=False, indent=2)}"
+    )
+
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+
+def build_state_extract_prompt(
+    project: dict[str, Any],
+    chapter_text: str,
+) -> list[dict[str, str]]:
+    """状态提取 Agent 的 Prompt。
+
+    角色: 小说自动化创作系统的【状态提取 Agent】
+    任务: 从已生成的章节正文中提取所有状态变化。
+
+    Args:
+        project: 完整的项目数据
+        chapter_text: 已生成的章节正文
+
+    Returns:
+        消息列表
+    """
+    chapters = project.get("chapters", [])
+
+    context = {
+        "chapterText": chapter_text,
+        "chapterNumber": len(chapters) + 1,
+        "characters": [
+            {
+                "id": c.get("id", ""),
+                "name": c.get("name", ""),
+                "role": c.get("role", ""),
+                "emotion": c.get("emotion", ""),
+                "agencyScore": c.get("agencyScore", 0),
+                "dropoutRisk": c.get("dropoutRisk", 0),
+                "currentGoal": c.get("currentGoal", ""),
+                "knowledgeState": c.get("knowledgeState", []),
+            }
+            for c in project.get("characters", [])[:8]
+        ],
+        "foreshadows": [
+            {
+                "id": f.get("id", ""),
+                "name": f.get("name", ""),
+                "status": f.get("status", ""),
+                "risk": f.get("risk", 0),
+                "plannedPayoffChapter": f.get("plannedPayoffChapter", f.get("plannedPayoff", 999)),
+            }
+            for f in project.get("foreshadows", [])[:10]
+        ],
+        "relationships": project.get("relationships", [])[:6],
+        "previousStateSnapshot": (
+            project.get("memory", {}).get("stateSnapshots", [])[-1]
+            if project.get("memory", {}).get("stateSnapshots")
+            else {}
+        ),
+        "recentEvents": project.get("events", [])[-5:],
+    }
+
+    system_prompt = (
+        "你是小说自动化创作系统的【状态提取 Agent】。\n\n"
+        "## 角色定位\n"
+        "你是一位细致的叙事分析师，擅长从文本中提取隐含的状态变化。"
+        "你的提取结果将用于维护小说的全局状态一致性。\n\n"
+        "## 任务\n"
+        "从已生成的章节正文中提取所有状态变化。\n\n"
+        "## 输出格式\n"
+        "你必须输出严格 JSON，不要写任何解释文字。JSON 结构如下：\n"
+        "{\n"
+        '  "state_delta": {\n'
+        '    "main_progress_delta": 2,\n'
+        '    "character_changes": [\n'
+        '      {"character_id": "角色ID", "character_name": "角色名", "field": "emotion/agencyScore/dropoutRisk/goal", "old": "旧值", "new": "新值", "reason": "变化原因"}\n'
+        "    ],\n"
+        '    "relationship_changes": [\n'
+        '      {"from": "角色A", "to": "角色B", "field": "trust/tension", "old_value": 50, "new_value": 45, "delta": -5, "reason": "变化原因"}\n'
+        "    ],\n"
+        '    "foreshadow_changes": [\n'
+        '      {"foreshadow_id": "伏笔ID", "action": "回响/推进/回收", "detail": "具体变化描述"}\n'
+        "    ],\n"
+        '    "new_events": [\n'
+        '      {"description": "事件描述", "impact": "影响描述", "visibility": ["看到了此事件的角色名列表"]}\n'
+        "    ],\n"
+        '    "timeline_updates": ["时间线更新描述"],\n'
+        '    "knowledge_updates": [\n'
+        '      {"character": "角色名", "learned": "学到了什么新信息", "forgot": null}\n'
+        "    ]\n"
+        "  }\n"
+        "}\n\n"
+        "## 提取规则\n"
+        "1. main_progress_delta: 主线推进程度（0-10），0表示无推进，10表示重大推进\n"
+        "2. character_changes: 只提取明确发生变化的角色属性\n"
+        "3. relationship_changes: trust 和 tension 的变化范围在 -20 到 +20 之间\n"
+        "4. foreshadow_changes: 只记录正文中实际提及或推进的伏笔\n"
+        "5. new_events: 只记录对后续剧情有影响的事件\n"
+        "6. timeline_updates: 记录时间线上的重要节点\n"
+        "7. knowledge_updates: 记录角色在本章中获得或失去的知识\n"
+        "8. 如果某类变化没有发生，对应列表为空数组即可\n"
+        "9. 所有变化必须有 reason 或 detail 说明原因\n"
+        "10. 不要凭空编造正文中没有的内容"
+    )
+
+    user_prompt = (
+        "请从以下章节正文中提取所有状态变化：\n\n"
+        f"{json.dumps(context, ensure_ascii=False, indent=2)}"
+    )
+
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
     ]

@@ -1,13 +1,34 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from app.core.utils import make_id, now_iso, truncate_text
 from app.services.deepseek_client import deepseek_client
-from app.services.prompt_templates import build_chapter_generation_prompt, build_outline_expansion_prompt
+from app.services.prompt_templates import (
+    build_chapter_generation_prompt,
+    build_outline_expansion_prompt,
+)
 from app.services.settings_service import settings_service
 
+# 多 Agent 系统
+from app.services.agents import (
+    ConstraintAgent,
+    DirectorAgent,
+    WriterAgent,
+    ReviewAgent,
+    StateExtractorAgent,
+    StateMerger,
+    ContextBuilder,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# ======================================================================
+# 常量与工具函数
+# ======================================================================
 
 GENRE_STYLE_MAP = {
     "奇幻": "明亮史诗感，场景富有想象力，冲突清晰，情绪推进直接。",
@@ -129,6 +150,10 @@ def default_foreshadows() -> list[dict[str, Any]]:
     ]
 
 
+# ======================================================================
+# Mock 蓝图构建（保留原有功能）
+# ======================================================================
+
 def build_mock_blueprint(project: dict[str, Any], variant: str = "standard") -> dict[str, Any]:
     title = project.get("title") or "未命名小说"
     genre = project.get("genre") or "奇幻"
@@ -234,6 +259,10 @@ def build_mock_blueprint(project: dict[str, Any], variant: str = "standard") -> 
     }
 
 
+# ======================================================================
+# 蓝图构建（保留原有 DeepSeek / Mock 双模式）
+# ======================================================================
+
 async def maybe_deepseek_blueprint(project: dict[str, Any]) -> dict[str, Any] | None:
     generation = settings_service.get_all(safe=False).get("generation", {})
     if generation.get("mockMode", True) or not deepseek_client.is_ready():
@@ -256,13 +285,22 @@ async def maybe_deepseek_blueprint(project: dict[str, Any]) -> dict[str, Any] | 
 
 
 async def build_story_blueprint(project: dict[str, Any], variant: str = "standard") -> dict[str, Any]:
+    """构建故事蓝图。
+
+    优先尝试 DeepSeek AI 生成，失败则回退 Mock 模式。
+    """
     ai_data = await maybe_deepseek_blueprint(project)
     if ai_data:
         return ai_data
     return build_mock_blueprint(project, variant=variant)
 
 
+# ======================================================================
+# Mock 章节生成（保留原有功能，供 Mock 模式使用）
+# ======================================================================
+
 def build_mock_chapter(project: dict[str, Any], options: dict[str, Any]) -> dict[str, Any]:
+    """Mock 模式下的章节生成（保留原有逻辑）。"""
     chapters = project.get("chapters", [])
     number = len(chapters) + 1
     title = chapter_title(number)
@@ -333,7 +371,12 @@ def build_mock_chapter(project: dict[str, Any], options: dict[str, Any]) -> dict
     }
 
 
+# ======================================================================
+# 原有 DeepSeek 单步章节生成（保留向后兼容）
+# ======================================================================
+
 async def maybe_deepseek_chapter(project: dict[str, Any], options: dict[str, Any]) -> dict[str, Any] | None:
+    """原有单步 DeepSeek 章节生成（保留向后兼容）。"""
     generation = settings_service.get_all(safe=False).get("generation", {})
     if generation.get("mockMode", True) or not deepseek_client.is_ready():
         return None
@@ -360,12 +403,140 @@ async def maybe_deepseek_chapter(project: dict[str, Any], options: dict[str, Any
         return None
 
 
-async def generate_next_chapter(project: dict[str, Any], options: dict[str, Any]) -> dict[str, Any]:
+# ======================================================================
+# 多 Agent 章节生成流水线（核心新逻辑）
+# ======================================================================
+
+async def _agent_pipeline_chapter(
+    project: dict[str, Any],
+    options: dict[str, Any],
+) -> dict[str, Any] | None:
+    """使用多 Agent 流水线生成章节。
+
+    流程:
+        1. ConstraintAgent   - 约束生成
+        2. DirectorAgent     - 导演稿生成
+        3. WriterAgent       - 正文写作
+        4. ReviewAgent       - 质量检查
+        5. StateExtractorAgent - 状态提取
+        6. StateMerger       - 状态合并验证
+
+    Returns:
+        完整的章节数据，失败返回 None。
+    """
+    context_builder = ContextBuilder()
+
+    # 步骤 1: 约束生成
+    logger.info("[Pipeline] 步骤 1/6: 约束生成...")
+    constraint_ctx = context_builder.build_constraint_context(project)
+    constraint_ctx["project"] = project
+    constraints = await ConstraintAgent().run(constraint_ctx)
+
+    # 步骤 2: 导演稿生成
+    logger.info("[Pipeline] 步骤 2/6: 导演稿生成...")
+    director_ctx = context_builder.build_director_context(project, constraints)
+    director_ctx["project"] = project
+    director_plan = await DirectorAgent().run(director_ctx)
+
+    # 步骤 3: 正文写作
+    logger.info("[Pipeline] 步骤 3/6: 正文写作...")
+    writer_ctx = context_builder.build_writer_context(project, constraints, director_plan)
+    writer_ctx["project"] = project
+    chapter_text = await WriterAgent().run(writer_ctx)
+
+    # 步骤 4: 质量检查
+    logger.info("[Pipeline] 步骤 4/6: 质量检查...")
+    # 构建一个临时 chapter 对象供 ReviewAgent 使用
+    temp_chapter = {
+        "text": chapter_text.get("text", ""),
+        "title": director_plan.get("chapter_goal", ""),
+        "number": len(project.get("chapters", [])) + 1,
+        "wordCount": chapter_text.get("word_count", 0),
+        "directorPlan": director_plan,
+        "constraints": constraints,
+    }
+    review_ctx = context_builder.build_review_context(project, temp_chapter)
+    review = await ReviewAgent().run(review_ctx)
+
+    # 步骤 5: 状态提取
+    logger.info("[Pipeline] 步骤 5/6: 状态提取...")
+    state_extract_ctx = context_builder.build_state_extract_context(project, temp_chapter)
+    state_extract_ctx["project"] = project
+    state_result = await StateExtractorAgent().run(state_extract_ctx)
+
+    # 步骤 6: 状态合并验证
+    logger.info("[Pipeline] 步骤 6/6: 状态合并验证...")
+    state_delta = state_result.get("state_delta", {})
+    merger = StateMerger()
+    merged, preview = merger.validate_and_merge(project, state_delta)
+
+    # 确定章节标题
+    chapters = project.get("chapters", [])
+    number = len(chapters) + 1
+    title = chapter_title(number)
+    if project.get("chapterTitlePreview"):
+        title = project["chapterTitlePreview"][number - 1].get("title", title)
+    # 如果导演稿中有更合适的标题，优先使用
+    if director_plan.get("chapter_goal"):
+        # 保留默认标题，但可以将 goal 作为补充信息
+        pass
+
+    # 组装完整章节
+    result = {
+        "id": make_id("chapter"),
+        "number": number,
+        "title": title,
+        "status": "pending",
+        "wordCount": chapter_text.get("word_count", 0),
+        "directorPlan": director_plan,
+        "text": chapter_text.get("text", ""),
+        "review": review,
+        "stateDelta": state_delta,
+        "statePreview": preview,
+        "constraints": constraints,
+        "createdAt": now_iso(),
+    }
+
+    logger.info(
+        "[Pipeline] 章节生成完成: 第%d章「%s」, 字数=%d, 质量分=%s",
+        number,
+        title,
+        result["wordCount"],
+        review.get("total_score", "N/A"),
+    )
+
+    return result
+
+
+async def generate_next_chapter(
+    project: dict[str, Any],
+    options: dict[str, Any],
+) -> dict[str, Any]:
+    """生成下一章（多 Agent 流水线 + 向后兼容）。
+
+    优先使用多 Agent 流水线，Mock 模式下各 Agent 自动使用 Mock 逻辑。
+    保留原有的 maybe_deepseek_chapter 作为降级方案。
+    """
+    # 优先使用多 Agent 流水线
+    try:
+        agent_chapter = await _agent_pipeline_chapter(project, options)
+        if agent_chapter:
+            return agent_chapter
+    except Exception as exc:
+        logger.warning("[Pipeline] 多 Agent 流水线失败，降级到原有模式: %s", exc)
+
+    # 降级: 尝试原有 DeepSeek 单步生成
     ai_chapter = await maybe_deepseek_chapter(project, options)
     if ai_chapter:
         return ai_chapter
+
+    # 最终降级: Mock 模式
     return build_mock_chapter(project, options)
 
+
+# ======================================================================
+# 项目状态分析（保留原有功能）
+# ======================================================================
 
 def analyze_project_state(project: dict[str, Any]) -> dict[str, Any]:
     status = project.get("status", {})

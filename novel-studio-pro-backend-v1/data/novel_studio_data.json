@@ -1,0 +1,75 @@
+{
+  "version": "1.0.0",
+  "createdAt": "2026-05-02T16:50:41.967284+00:00",
+  "updatedAt": "2026-05-02T16:50:41.967314+00:00",
+  "projects": {},
+  "settings": {
+    "generation": {
+      "mockMode": true,
+      "generationMode": "standard",
+      "qualityThreshold": 85,
+      "autoRewriteTimes": 2,
+      "chapterMinWords": 3000,
+      "chapterMaxWords": 6000,
+      "maxInputTokens": 64000,
+      "maxOutputTokens": 12000,
+      "requestTimeoutSeconds": 180,
+      "retryTimes": 2,
+      "agents": {
+        "memoryRetrieval": true,
+        "constraintBuilder": true,
+        "chapterDirector": true,
+        "characterDirector": true,
+        "foreshadowManager": true,
+        "writer": true,
+        "reviewer": true,
+        "stateUpdater": true
+      }
+    },
+    "modelRoutes": {
+      "outlineExpansion": {
+        "model": "deepseek-chat",
+        "temperature": 0.75,
+        "maxOutputTokens": 12000,
+        "fallbackModel": "deepseek-chat"
+      },
+      "chapterDirector": {
+        "model": "deepseek-chat",
+        "temperature": 0.45,
+        "maxOutputTokens": 6000,
+        "fallbackModel": "deepseek-chat"
+      },
+      "chapterWriting": {
+        "model": "deepseek-chat",
+        "temperature": 0.9,
+        "maxOutputTokens": 12000,
+        "fallbackModel": "deepseek-chat"
+      },
+      "continuityReview": {
+        "model": "deepseek-chat",
+        "temperature": 0.2,
+        "maxOutputTokens": 5000,
+        "fallbackModel": "deepseek-chat"
+      },
+      "stateExtraction": {
+        "model": "deepseek-chat",
+        "temperature": 0.1,
+        "maxOutputTokens": 5000,
+        "fallbackModel": "deepseek-chat"
+      }
+    },
+    "deepseek": {
+      "enabled": false,
+      "baseUrl": "https://api.deepseek.com",
+      "apiKey": "",
+      "mainModel": "deepseek-chat",
+      "fastModel": "deepseek-chat",
+      "requestTimeoutSeconds": 180,
+      "retryTimes": 2,
+      "stream": false,
+      "jsonMode": true
+    },
+    "updatedAt": "2026-05-02T16:50:41.967310+00:00"
+  },
+  "requestLogs": []
+}

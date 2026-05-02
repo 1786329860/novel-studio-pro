@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import HTTPException
@@ -7,6 +8,9 @@ from fastapi import HTTPException
 from app.core.storage import store
 from app.core.utils import make_id, now_iso, deep_merge
 from app.services import ai_orchestrator
+from app.services.agents import StateMerger
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectService:
@@ -145,131 +149,35 @@ class ProjectService:
             if not any(c.get("id") == chapter_id for c in chapters):
                 chapters.append(chapter)
 
-            # 事件账本更新：兼容 stateDelta.eventUpdates 为字符串或对象。
-            events = current.setdefault("events", [])
-            for index, event in enumerate(delta.get("eventUpdates", [])):
-                if isinstance(event, str):
-                    event = {
-                        "id": make_id("evt"),
-                        "chapter": chapter.get("number"),
-                        "time": f"第{chapter.get('number')}章 0{index}:12",
-                        "scene": "自动识别场景",
-                        "characters": "江离 / 沈烬" if index % 2 else "江离",
-                        "event": event,
-                        "impact": "推进主线" if index % 2 == 0 else "角色行动",
-                        "visibility": "主角/读者",
-                    }
-                else:
-                    event = dict(event)
-                    if not event.get("id"):
-                        event["id"] = make_id("evt")
-                    if isinstance(event.get("characters"), list):
-                        event["characters"] = "、".join(map(str, event["characters"]))
-                events.append(event)
+            # ============================================================
+            # 状态合并: 优先使用 StateMerger 处理新格式 state_delta
+            # ============================================================
+            _apply_state_delta_via_merger(current, chapter, delta)
 
-            # 伏笔生命周期更新：兼容 stateDelta.newForeshadows 为字符串或对象。
-            foreshadows = current.setdefault("foreshadows", [])
-            for index, foreshadow in enumerate(delta.get("newForeshadows", [])):
-                if isinstance(foreshadow, str):
-                    item = {
-                        "id": make_id("fb"),
-                        "name": foreshadow,
-                        "firstChapter": chapter.get("number"),
-                        "lastMentioned": chapter.get("number"),
-                        "lastMentionedChapter": chapter.get("number"),
-                        "status": "已埋下",
-                        "importance": "medium",
-                        "risk": round(0.18 + index * 0.08, 2),
-                        "plannedPayoff": chapter.get("number", 1) + 10 + index * 4,
-                        "plannedPayoffChapter": chapter.get("number", 1) + 10 + index * 4,
-                        "nextAction": "后续章节轻微回响。",
-                    }
-                else:
-                    item = {
-                        "id": foreshadow.get("id") or make_id("fb"),
-                        "name": foreshadow.get("name", "未命名伏笔"),
-                        "firstChapter": chapter.get("number"),
-                        "lastMentioned": chapter.get("number"),
-                        "lastMentionedChapter": chapter.get("number"),
-                        "status": foreshadow.get("status", "已埋下"),
-                        "importance": foreshadow.get("importance", "medium"),
-                        "risk": foreshadow.get("risk", 0.2),
-                        "plannedPayoff": foreshadow.get("plannedPayoff", foreshadow.get("plannedPayoffChapter", chapter.get("number", 1) + 10)),
-                        "plannedPayoffChapter": foreshadow.get("plannedPayoffChapter", foreshadow.get("plannedPayoff", chapter.get("number", 1) + 10)),
-                        "nextAction": foreshadow.get("nextAction", "后续章节轻微回响。"),
-                    }
-                if item.get("risk", 0) > 1:
-                    item["risk"] = round(item["risk"] / 100, 2)
-                foreshadows.append(item)
+            # ============================================================
+            # 事件账本更新: 兼容 stateDelta.eventUpdates / new_events
+            # ============================================================
+            _apply_event_updates(current, chapter, delta)
 
-            # 角色活跃状态粗更新
-            character_names = set()
-            for event in events[-len(delta.get("eventUpdates", [])):] if delta.get("eventUpdates") else []:
-                chars = str(event.get("characters", ""))
-                for name in chars.replace("/", "、").split("、"):
-                    if name.strip():
-                        character_names.add(name.strip())
-            for character in current.get("characters", []):
-                current_risk = float(character.get("dropoutRisk", 0.2))
-                current_agency = float(character.get("agencyScore", 0.7))
-                if current_risk > 1:
-                    current_risk = current_risk / 100
-                if current_agency > 1:
-                    current_agency = current_agency / 100
-                if character.get("name") in character_names:
-                    character["lastAppeared"] = chapter.get("number")
-                    character["lastAppearedChapter"] = chapter.get("number")
-                    character["dropoutRisk"] = round(max(0.05, current_risk - 0.06), 2)
-                    character["agencyScore"] = round(min(1.0, current_agency + 0.02), 2)
-                else:
-                    character["dropoutRisk"] = round(min(0.95, current_risk + 0.03), 2)
-                    character["agencyScore"] = round(current_agency, 2)
+            # ============================================================
+            # 伏笔生命周期更新: 兼容 stateDelta.newForeshadows / foreshadow_changes
+            # ============================================================
+            _apply_foreshadow_updates(current, chapter, delta)
 
+            # ============================================================
+            # 角色活跃状态更新
+            # ============================================================
+            _apply_character_activity(current, chapter, delta)
+
+            # ============================================================
             # 状态面板更新
-            current_chapter = int(chapter.get("number", len(chapters)))
-            status = current.setdefault("status", {})
-            total_target = int(current.get("totalTargetChapters", 120) or 120)
-            current["currentChapterNumber"] = current_chapter
-            current["wordCount"] = int(current.get("wordCount", 0) or 0) + int(chapter.get("wordCount", 0) or 0)
-            current["totalTargetChapters"] = total_target
-            active_count = len([c for c in current.get("characters", []) if float(c.get("dropoutRisk", 1)) < 0.5])
-            old_deviation = float(status.get("deviationRisk", 0.08) or 0.08)
-            if old_deviation > 1:
-                old_deviation = old_deviation / 100
-            status.update({
-                "currentChapter": current_chapter,
-                "currentChapterTitle": f"第 {current_chapter} 章 · {chapter.get('title')}",
-                "mainProgress": min(100, max(status.get("mainProgress", 0), int(current_chapter / total_target * 100))),
-                "foreshadowTotal": len(foreshadows),
-                "foreshadowCount": len(foreshadows),
-                "foreshadowResolved": len([f for f in foreshadows if f.get("status") in {"已回收", "已解决"}]),
-                "activeCharacters": active_count,
-                "totalCharacters": len(current.get("characters", [])),
-                "deviationRisk": round(max(0.03, min(0.6, old_deviation + 0.01)), 2),
-                "qualityScore": chapter.get("review", {}).get("totalScore", status.get("qualityScore", 90)),
-                "tests": chapter.get("review", {}).get("tests", []),
-                "lastAnalyzedAt": now_iso(),
-            })
+            # ============================================================
+            _apply_status_update(current, chapter, chapters)
 
+            # ============================================================
             # 记忆更新
-            memory = current.setdefault("memory", {})
-            summaries = memory.setdefault("chapterSummaries", [])
-            summaries.append({
-                "chapter": current_chapter,
-                "title": chapter.get("title"),
-                "summary": f"第{current_chapter}章推进了旧案调查，并更新了角色关系与伏笔。",
-                "wordCount": chapter.get("wordCount", 0),
-            })
-            snapshots = memory.setdefault("stateSnapshots", [])
-            snapshots.append({
-                "chapter": current_chapter,
-                "createdAt": now_iso(),
-                "status": dict(status),
-            })
-            if len(summaries) > 300:
-                del summaries[:-300]
-            if len(snapshots) > 300:
-                del snapshots[:-300]
+            # ============================================================
+            _apply_memory_update(current, chapter, chapters)
 
             current["updatedAt"] = now_iso()
             return {"project": current, "chapter": chapter}
@@ -340,6 +248,259 @@ class ProjectService:
             current["updatedAt"] = now_iso()
             return {"memory": memory, "message": "全局记忆已重建。"}
         return store.update(mut)
+
+
+# ======================================================================
+# confirm_chapter 内部辅助函数
+# ======================================================================
+
+def _apply_state_delta_via_merger(
+    current: dict[str, Any],
+    chapter: dict[str, Any],
+    delta: dict[str, Any],
+) -> None:
+    """使用 StateMerger 处理新格式的 state_delta。
+
+    新格式包含: character_changes, relationship_changes, foreshadow_changes,
+    new_events, knowledge_updates 等结构化字段。
+    如果 state_delta 为空或不包含新格式字段，跳过此步骤。
+    """
+    # 检查是否为新格式 state_delta（由 StateExtractorAgent 生成）
+    new_format_keys = {"character_changes", "relationship_changes", "foreshadow_changes", "new_events"}
+    has_new_format = any(delta.get(k) for k in new_format_keys)
+
+    if not has_new_format:
+        return
+
+    try:
+        merger = StateMerger()
+        # StateMerger.merge_delta 会直接修改 current（作为 project 参数传入）
+        merger.merge_delta(current, delta)
+        logger.info("[confirm_chapter] StateMerger 合并完成")
+    except Exception as exc:
+        logger.warning("[confirm_chapter] StateMerger 合并失败，回退到原有逻辑: %s", exc)
+
+
+def _apply_event_updates(
+    current: dict[str, Any],
+    chapter: dict[str, Any],
+    delta: dict[str, Any],
+) -> None:
+    """更新事件账本。
+
+    兼容两种格式:
+    - 旧格式: stateDelta.eventUpdates (字符串或对象列表)
+    - 新格式: stateDelta.new_events (由 StateMerger 已处理的结构化事件)
+
+    如果 StateMerger 已经处理了 new_events，这里只处理旧格式的 eventUpdates。
+    """
+    events = current.setdefault("events", [])
+
+    # 旧格式: eventUpdates
+    event_updates = delta.get("eventUpdates", [])
+    if not event_updates:
+        return
+
+    # 检查是否已被 StateMerger 处理（避免重复添加）
+    # StateMerger 处理的事件有 description 字段，旧格式的事件通常是字符串
+    for index, event in enumerate(event_updates):
+        if isinstance(event, str):
+            event = {
+                "id": make_id("evt"),
+                "chapter": chapter.get("number"),
+                "time": f"第{chapter.get('number')}章 0{index}:12",
+                "scene": "自动识别场景",
+                "characters": "江离 / 沈烬" if index % 2 else "江离",
+                "event": event,
+                "impact": "推进主线" if index % 2 == 0 else "角色行动",
+                "visibility": "主角/读者",
+            }
+        else:
+            event = dict(event)
+            if not event.get("id"):
+                event["id"] = make_id("evt")
+            if isinstance(event.get("characters"), list):
+                event["characters"] = "、".join(map(str, event["characters"]))
+
+        # 检查是否已存在（避免 StateMerger 重复添加）
+        event_desc = event.get("event") or event.get("description", "")
+        already_exists = any(
+            e.get("event") == event_desc or e.get("description") == event_desc
+            for e in events
+        )
+        if not already_exists:
+            events.append(event)
+
+
+def _apply_foreshadow_updates(
+    current: dict[str, Any],
+    chapter: dict[str, Any],
+    delta: dict[str, Any],
+) -> None:
+    """更新伏笔生命周期。
+
+    兼容两种格式:
+    - 旧格式: stateDelta.newForeshadows (字符串或对象列表)
+    - 新格式: stateDelta.foreshadow_changes (由 StateMerger 已处理)
+
+    如果 StateMerger 已经处理了 foreshadow_changes，这里只处理旧格式的 newForeshadows。
+    """
+    foreshadows = current.setdefault("foreshadows", [])
+
+    # 旧格式: newForeshadows
+    new_foreshadows = delta.get("newForeshadows", [])
+    if not new_foreshadows:
+        return
+
+    for index, foreshadow in enumerate(new_foreshadows):
+        if isinstance(foreshadow, str):
+            item = {
+                "id": make_id("fb"),
+                "name": foreshadow,
+                "firstChapter": chapter.get("number"),
+                "lastMentioned": chapter.get("number"),
+                "lastMentionedChapter": chapter.get("number"),
+                "status": "已埋下",
+                "importance": "medium",
+                "risk": round(0.18 + index * 0.08, 2),
+                "plannedPayoff": chapter.get("number", 1) + 10 + index * 4,
+                "plannedPayoffChapter": chapter.get("number", 1) + 10 + index * 4,
+                "nextAction": "后续章节轻微回响。",
+            }
+        else:
+            item = {
+                "id": foreshadow.get("id") or make_id("fb"),
+                "name": foreshadow.get("name", "未命名伏笔"),
+                "firstChapter": chapter.get("number"),
+                "lastMentioned": chapter.get("number"),
+                "lastMentionedChapter": chapter.get("number"),
+                "status": foreshadow.get("status", "已埋下"),
+                "importance": foreshadow.get("importance", "medium"),
+                "risk": foreshadow.get("risk", 0.2),
+                "plannedPayoff": foreshadow.get("plannedPayoff", foreshadow.get("plannedPayoffChapter", chapter.get("number", 1) + 10)),
+                "plannedPayoffChapter": foreshadow.get("plannedPayoffChapter", foreshadow.get("plannedPayoff", chapter.get("number", 1) + 10)),
+                "nextAction": foreshadow.get("nextAction", "后续章节轻微回响。"),
+            }
+        if item.get("risk", 0) > 1:
+            item["risk"] = round(item["risk"] / 100, 2)
+
+        # 检查是否已存在（避免 StateMerger 重复添加）
+        already_exists = any(
+            f.get("name") == item.get("name") for f in foreshadows
+        )
+        if not already_exists:
+            foreshadows.append(item)
+
+
+def _apply_character_activity(
+    current: dict[str, Any],
+    chapter: dict[str, Any],
+    delta: dict[str, Any],
+) -> None:
+    """更新角色活跃状态。
+
+    基于事件账本中的角色出场信息，更新 lastAppeared、dropoutRisk、agencyScore。
+    如果 StateMerger 已经通过 character_changes 更新了这些字段，这里做补充检查。
+    """
+    events = current.get("events", [])
+    # 获取本章新增的事件
+    chapter_events = delta.get("eventUpdates", [])
+    if not chapter_events:
+        return
+
+    character_names = set()
+    for event in events[-len(chapter_events):] if chapter_events else []:
+        chars = str(event.get("characters", ""))
+        for name in chars.replace("/", "、").split("、"):
+            if name.strip():
+                character_names.add(name.strip())
+
+    for character in current.get("characters", []):
+        current_risk = float(character.get("dropoutRisk", 0.2))
+        current_agency = float(character.get("agencyScore", 0.7))
+        if current_risk > 1:
+            current_risk = current_risk / 100
+        if current_agency > 1:
+            current_agency = current_agency / 100
+        if character.get("name") in character_names:
+            character["lastAppeared"] = chapter.get("number")
+            character["lastAppearedChapter"] = chapter.get("number")
+            character["dropoutRisk"] = round(max(0.05, current_risk - 0.06), 2)
+            character["agencyScore"] = round(min(1.0, current_agency + 0.02), 2)
+        else:
+            character["dropoutRisk"] = round(min(0.95, current_risk + 0.03), 2)
+            character["agencyScore"] = round(current_agency, 2)
+
+
+def _apply_status_update(
+    current: dict[str, Any],
+    chapter: dict[str, Any],
+    chapters: list[dict[str, Any]],
+) -> None:
+    """更新状态面板。"""
+    current_chapter = int(chapter.get("number", len(chapters)))
+    status = current.setdefault("status", {})
+    total_target = int(current.get("totalTargetChapters", 120) or 120)
+    current["currentChapterNumber"] = current_chapter
+    current["wordCount"] = int(current.get("wordCount", 0) or 0) + int(chapter.get("wordCount", 0) or 0)
+    current["totalTargetChapters"] = total_target
+    active_count = len([c for c in current.get("characters", []) if float(c.get("dropoutRisk", 1)) < 0.5])
+    old_deviation = float(status.get("deviationRisk", 0.08) or 0.08)
+    if old_deviation > 1:
+        old_deviation = old_deviation / 100
+
+    # 从 review 中获取质量分数（兼容新旧格式）
+    review = chapter.get("review", {})
+    quality_score = review.get("totalScore", status.get("qualityScore", 90))
+    tests = review.get("tests", [])
+
+    status.update({
+        "currentChapter": current_chapter,
+        "currentChapterTitle": f"第 {current_chapter} 章 · {chapter.get('title')}",
+        "mainProgress": min(100, max(status.get("mainProgress", 0), int(current_chapter / total_target * 100))),
+        "foreshadowTotal": len(current.get("foreshadows", [])),
+        "foreshadowCount": len(current.get("foreshadows", [])),
+        "foreshadowResolved": len([f for f in current.get("foreshadows", []) if f.get("status") in {"已回收", "已解决"}]),
+        "activeCharacters": active_count,
+        "totalCharacters": len(current.get("characters", [])),
+        "deviationRisk": round(max(0.03, min(0.6, old_deviation + 0.01)), 2),
+        "qualityScore": quality_score,
+        "tests": tests,
+        "lastAnalyzedAt": now_iso(),
+    })
+
+
+def _apply_memory_update(
+    current: dict[str, Any],
+    chapter: dict[str, Any],
+    chapters: list[dict[str, Any]],
+) -> None:
+    """更新记忆系统（章节摘要 + 状态快照）。"""
+    current_chapter = int(chapter.get("number", len(chapters)))
+    memory = current.setdefault("memory", {})
+
+    # 章节摘要
+    summaries = memory.setdefault("chapterSummaries", [])
+    summaries.append({
+        "chapter": current_chapter,
+        "title": chapter.get("title"),
+        "summary": f"第{current_chapter}章推进了旧案调查，并更新了角色关系与伏笔。",
+        "wordCount": chapter.get("wordCount", 0),
+    })
+
+    # 状态快照
+    snapshots = memory.setdefault("stateSnapshots", [])
+    snapshots.append({
+        "chapter": current_chapter,
+        "createdAt": now_iso(),
+        "status": dict(current.get("status", {})),
+    })
+
+    # 限制历史记录数量
+    if len(summaries) > 300:
+        del summaries[:-300]
+    if len(snapshots) > 300:
+        del snapshots[:-300]
 
 
 project_service = ProjectService()
