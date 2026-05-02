@@ -1,0 +1,41 @@
+{
+  "name": "novel-studio-pro-frontend-v3",
+  "version": "0.3.0",
+  "description": "Novel Studio Pro desktop frontend v3 with complete UI pages for characters, truth, memory, generation, model and DeepSeek API settings.",
+  "main": "main.js",
+  "author": "Novel Studio Pro",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "dist": "electron-builder --win nsis",
+    "check": "node --check main.js && node --check preload.js"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.novelstudiopro.desktop",
+    "productName": "Novel Studio Pro",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

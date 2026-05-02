@@ -1,0 +1,27 @@
+[Unit]
+Description=Novel Studio Pro Backend
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/novel-studio-pro-backend
+ExecStart=/opt/novel-studio-pro-backend/venv/bin/python start_production.py --host 0.0.0.0 --port 8765
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/novel-studio-pro-backend/.env
+
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/novel-studio-pro-backend/data
+
+# 日志
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=novel-studio
+
+[Install]
+WantedBy=multi-user.target
