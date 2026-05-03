@@ -250,6 +250,8 @@ button {
   background: rgba(255, 255, 255, 0.62);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(18px);
+  position: relative;
+  z-index: 100;
 }
 
 .project-select,
