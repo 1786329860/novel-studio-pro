@@ -1,7 +1,7 @@
 {
   "name": "novel-studio-pro-frontend-v3",
   "version": "0.3.0",
-  "description": "Novel Studio Pro desktop frontend v3 with complete UI pages for characters, truth, memory, generation, model and DeepSeek API settings.",
+  "description": "Novel Studio Pro - AI 自动化长篇小说创作工具",
   "main": "main.js",
   "author": "Novel Studio Pro",
   "license": "UNLICENSED",
@@ -10,7 +10,7 @@
     "dev": "electron .",
     "start": "electron .",
     "dist": "electron-builder --win nsis",
-    "check": "node --check main.js && node --check preload.js && node --check tools/start_backend.js"
+    "check": "node --check main.js && node --check preload.js"
   },
   "dependencies": {},
   "devDependencies": {
@@ -27,35 +27,27 @@
       "main.js",
       "preload.js",
       "index.html",
-      "loading.html",
       "src/**/*",
-      "tools/**/*",
-      "resources/**/*",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "../novel-studio-pro-backend-v1",
-        "to": "backend",
-        "filter": [
-          "**/*",
-          "!__pycache__/**",
-          "!**/*.pyc",
-          "!data/**",
-          "!frontend_patch/**",
-          "!*.md",
-          "!*.service",
-          "!run_backend.bat"
-        ]
-      }
-    ],
     "win": {
-      "target": "nsis"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": null
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    },
-    "afterPack": "./tools/after_pack.js"
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": null,
+      "uninstallerIcon": null,
+      "installerHeaderIcon": null,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Novel Studio Pro"
+    }
   }
 }
