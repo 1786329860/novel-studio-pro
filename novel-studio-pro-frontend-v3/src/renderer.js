@@ -5,6 +5,7 @@ const app = document.querySelector('#app');
 let busyText = '';
 let streamProgress = null;  // 流式进度状态: { agent, text, rewriteAttempt, rewriteReason }
 let toast = null;
+let toastTimer = null;
 
 const navItems = [
   { id: 'project', icon: '▦', label: '项目总览' },
@@ -60,12 +61,10 @@ function getProject(state) {
 }
 
 function showToast(message, tone = 'ok') {
+  if (toastTimer) clearTimeout(toastTimer);
   toast = { message, tone };
   render();
-  setTimeout(() => {
-    toast = null;
-    render();
-  }, 2600);
+  toastTimer = setTimeout(() => { toast = null; toastTimer = null; render(); }, 2600);
 }
 
 async function runTask(text, task) {
@@ -392,8 +391,8 @@ function renderWritingPage(project, pendingChapter, state) {
         <section class="card guide-card" id="guide-card"><div class="section-title"><h2>本章写作指南</h2><button class="tiny-btn" data-action="editGuide">编辑</button></div><div class="guide-block"><b>本章目标</b><p>${escapeHtml(dp.goal)}</p></div><div class="guide-block"><b>视角安排</b><p>${escapeHtml(dp.pov)}</p></div><div class="guide-block"><b>角色站位</b><p>${roleEntries.map(([k, v]) => `${escapeHtml(k)} ${v}%`).join(' / ')}</p></div><div class="guide-block danger"><b>禁止事项</b><p>${(dp.forbidden || []).map(escapeHtml).join('；')}</p></div></section>
         <section class="card progress-card"><h2>章节进度</h2>${[['主线推进', project.status.mainProgress || 0, 'blue'], ['女主戏份', roleEntries.find(([k]) => k.includes('沈'))?.[1] || 35, 'pink'], ['伏笔风险', 28, 'orange'], ['偏离风险', (project.status?.deviationRisk ?? 0) * 100, 'mint']].map(([a, b, c]) => `<div class="metric-line"><b>${a}</b><span>${Math.round(b)}%</span>${progress(b, c)}</div>`).join('')}</section>
       </aside>
-      <section class="card editor-card"><div class="chapter-head"><div><h1>第 ${chapter.number} 章 · ${escapeHtml(chapter.title)}</h1><p>视角：江离　时段：自动判断　字数：${number(chapter.wordCount)}</p></div><button class="circle-btn">···</button></div><article class="novel-text">${escapeHtml(chapter.text).split('\n').map((p) => p ? `<p>${p}</p>` : '<br/>').join('')}</article><div class="editor-footer"><span>字数统计：${number(chapter.wordCount)}</span><span>预计本章字数：${number(getState().settings.chapterWordTargetMin)} - ${number(getState().settings.chapterWordTargetMax)}</span><button class="tiny-btn">写作模式⌄</button></div><div class="chapter-actions"><button class="soft-btn" data-action="generateNextChapter">重写本章</button><button class="next-btn" data-action="generateNextChapter">✦ 生成下一章</button>${isPending ? `<button class="primary-btn" data-action="confirmChapter">确认本章入库</button>` : `<button class="soft-btn">继续写作</button>`}</div></section>
-      <aside class="right-panel"><section class="card ai-director"><h2>AI 自动导演</h2><div class="preview-card"><h3>当前主线</h3><p>${escapeHtml(project.storyBible.mainConflict)}</p>${progress(project.status.mainProgress || 0, 'blue')}</div><div class="preview-card"><h3>下一转折</h3><p>系统将根据事件账本和伏笔风险自动安排下一次冲突或揭示。</p></div></section><section class="card risk-card"><h2>风险预警</h2><div class="ring-row"><div class="ring">28%<small>伏笔风险</small></div><div class="ring green">${Math.round(project.status.deviationRisk * 100)}%<small>偏离风险</small></div></div></section><section class="card"><h2>角色活跃度</h2>${project.characters.slice(0, 4).map((char) => `<div class="metric-line"><b>${escapeHtml(char.name)}</b><span>${Math.round((1 - char.dropoutRisk) * 100)}%</span>${progress((1 - char.dropoutRisk) * 100, 'pink')}</div>`).join('')}</section><section class="card"><h2>AI 质量评分</h2><div class="score-big">${(chapter.review && chapter.review.totalScore) || project.status.qualityScore}<small>/100</small></div>${((chapter.review && chapter.review.tests) || []).slice(0, 4).map((test) => `<div class="test-row"><span>${test.passed ? '✓' : '!'}</span><b>${escapeHtml(test.name)}</b><em>${test.score}/100</em></div>`).join('')}</section></aside>
+      <section class="card editor-card"><div class="chapter-head"><div><h1>第 ${chapter.number} 章 · ${escapeHtml(chapter.title)}</h1><p>视角：${escapeHtml(dp.pov || '自动判断')}　时段：自动判断　字数：${number(chapter.wordCount)}</p></div><button class="circle-btn">···</button></div><article class="novel-text">${escapeHtml(chapter.text).split('\n').map((p) => p ? `<p>${p}</p>` : '<br/>').join('')}</article><div class="editor-footer"><span>字数统计：${number(chapter.wordCount)}</span><span>预计本章字数：${number(getState().settings.chapterWordTargetMin)} - ${number(getState().settings.chapterWordTargetMax)}</span><button class="tiny-btn">写作模式⌄</button></div><div class="chapter-actions"><button class="soft-btn" data-action="generateNextChapter">重写本章</button><button class="next-btn" data-action="generateNextChapter">✦ 生成下一章</button>${isPending ? `<button class="primary-btn" data-action="confirmChapter">确认本章入库</button>` : `<button class="soft-btn">继续写作</button>`}</div></section>
+      <aside class="right-panel"><section class="card ai-director"><h2>AI 自动导演</h2><div class="preview-card"><h3>当前主线</h3><p>${escapeHtml(project.storyBible.mainConflict)}</p>${progress(project.status.mainProgress || 0, 'blue')}</div><div class="preview-card"><h3>下一转折</h3><p>系统将根据事件账本和伏笔风险自动安排下一次冲突或揭示。</p></div></section><section class="card risk-card"><h2>风险预警</h2><div class="ring-row"><div class="ring">28%<small>伏笔风险</small></div><div class="ring green">${Math.round((project.status?.deviationRisk ?? 0) * 100)}%<small>偏离风险</small></div></div></section><section class="card"><h2>角色活跃度</h2>${characters.slice(0, 4).map((char) => `<div class="metric-line"><b>${escapeHtml(char.name)}</b><span>${Math.round((1 - char.dropoutRisk) * 100)}%</span>${progress((1 - char.dropoutRisk) * 100, 'pink')}</div>`).join('')}</section><section class="card"><h2>AI 质量评分</h2><div class="score-big">${(chapter.review && chapter.review.totalScore) || project.status.qualityScore}<small>/100</small></div>${((chapter.review && chapter.review.tests) || []).slice(0, 4).map((test) => `<div class="test-row"><span>${test.passed ? '✓' : '!'}</span><b>${escapeHtml(test.name)}</b><em>${test.score}/100</em></div>`).join('')}</section></aside>
       <section class="card state-delta"><h2>状态变化（本章结束后）</h2>${[['新增信息', (chapter.stateDelta && chapter.stateDelta.newForeshadows) || []], ['角色关系变化', (chapter.stateDelta && chapter.stateDelta.relationshipChanges) || []], ['事件更新', (chapter.stateDelta && chapter.stateDelta.eventUpdates) || []], ['时间线', (chapter.stateDelta && chapter.stateDelta.timeline) || []]].map(([title, list]) => `<div><h3>${title}</h3><ul>${list.length ? list.map((x) => `<li>${escapeHtml(x)}</li>`).join('') : '<li>等待生成后显示</li>'}</ul></div>`).join('')}</section>
     </main>
   `;
@@ -401,20 +400,24 @@ function renderWritingPage(project, pendingChapter, state) {
 
 function renderStatusPage(project) {
   if (!project) return emptyProjectPanel();
-  const chapter = project.chapters.at(-1);
-  const tests = project.status.tests?.length ? project.status.tests : defaultTests();
+  const characters = project.characters || [];
+  const foreshadows = project.foreshadows || [];
+  const status = project.status || {};
+  const truthSource = project.truthSource || {};
+  const chapter = (project.chapters || []).at(-1);
+  const tests = status.tests?.length ? status.tests : defaultTests();
   return `
     <main class="page status-page">
       <div class="page-head"><div><h1>状态面板 · 全局运行监控</h1><p>状态驱动、约束驱动、检查驱动的自动化监控中心。</p></div><div class="head-actions"><button class="primary-btn" data-action="analyzeState">重新分析状态</button><button class="soft-btn">生成检查报告</button><button class="soft-btn">锁定本章状态</button></div></div>
-      <section class="kpi-row">${[['当前章节', chapter ? `第 ${chapter.number} 章 · ${chapter.title}` : '尚未生成', '字数：' + number(chapter?.wordCount), 'pink'], ['主线推进度', `${project.status.mainProgress || 0}%`, `已推进 ${Math.round((project.status.mainProgress || 0) / 2)} 个主线节点`, 'blue'], ['伏笔总数', project.foreshadows.length, `已记录 ${project.foreshadows.length} 条`, 'purple'], ['角色活跃数', project.characters.length, `活跃角色 / 总角色 ${project.characters.length} / ${project.characters.length + 18}`, 'orange'], ['偏离风险', formatPct(project.status.deviationRisk), '安全', 'mint'], ['AI 质量评分', `${project.status.qualityScore || 90}/100`, '优秀', 'blue']].map(([a, b, c, tone]) => `<div class="card kpi ${tone}"><h3>${a}</h3><strong>${escapeHtml(b)}</strong><small>${escapeHtml(c)}</small>${a.includes('推进') ? progress(project.status.mainProgress || 0, 'blue') : ''}</div>`).join('')}</section>
-      <section class="status-grid"><div class="card ledger-panel"><div class="section-title"><h2>事件账本</h2><div><button class="tiny-btn">全部事件</button><button class="tiny-btn">全部角色</button></div></div><table><thead><tr><th>时间</th><th>场景</th><th>角色</th><th>事件</th><th>影响</th><th>可见性</th></tr></thead><tbody>${renderEventRows(project)}</tbody></table></div><div class="card truth-panel"><h2>真相源 / 信息层级</h2>${Object.entries(project.truthSource).map(([key, val]) => `<div class="metric-line"><b>${truthLabel(key)}</b><span>${val}%</span>${progress(val, key === 'misdirection' ? 'orange' : 'blue')}</div>`).join('')}</div><div class="card character-warning"><h2>角色活跃与掉线预警</h2>${project.characters.map((char) => `<div class="warning-row"><b>${escapeHtml(char.name)}</b><span>第 ${char.lastAppeared || '-'} 章</span><em class="${char.dropoutRisk > 0.5 ? 'danger-text' : ''}">${formatPct(char.dropoutRisk)}</em><small>建议第 ${(project.currentChapterNumber || 0) + 1} 章</small></div>`).join('')}</div><div class="card"><h2>伏笔生命周期</h2>${project.foreshadows.slice(-8).map((fb) => `<div class="list-row"><span class="dot-icon">✧</span><div><b>${escapeHtml(fb.name)}</b><small>埋下于第 ${fb.firstChapter} 章，计划第 ${fb.plannedPayoff} 章回收</small></div>${pill(fb.status, fb.risk > 0.5 ? 'red' : 'orange')}</div>`).join('')}</div><div class="card network-card"><h2>角色关系网络（核心）</h2><div class="network"><span class="node center">江离</span><span class="node n1">沈烁</span><span class="node n2">苏照</span><span class="node n3">夜烬</span><span class="node n4">女主线</span></div></div><div class="card test-panel"><h2>检查与测试（小说单元测试）</h2>${tests.map((test) => `<div class="test-row"><span>${test.passed ? '✓' : '!'}</span><b>${escapeHtml(test.name)}</b><em>${test.score}/100</em><small>${escapeHtml(test.note)}</small></div>`).join('')}</div></section>
+      <section class="kpi-row">${[['当前章节', chapter ? `第 ${chapter.number} 章 · ${chapter.title}` : '尚未生成', '字数：' + number(chapter?.wordCount), 'pink'], ['主线推进度', `${status.mainProgress || 0}%`, `已推进 ${Math.round((status.mainProgress || 0) / 2)} 个主线节点`, 'blue'], ['伏笔总数', foreshadows.length, `已记录 ${foreshadows.length} 条`, 'purple'], ['角色活跃数', characters.length, `活跃角色 / 总角色 ${characters.length} / ${characters.length + 18}`, 'orange'], ['偏离风险', formatPct(status.deviationRisk), '安全', 'mint'], ['AI 质量评分', `${status.qualityScore || 90}/100`, '优秀', 'blue']].map(([a, b, c, tone]) => `<div class="card kpi ${tone}"><h3>${a}</h3><strong>${escapeHtml(b)}</strong><small>${escapeHtml(c)}</small>${a.includes('推进') ? progress(status.mainProgress || 0, 'blue') : ''}</div>`).join('')}</section>
+      <section class="status-grid"><div class="card ledger-panel"><div class="section-title"><h2>事件账本</h2><div><button class="tiny-btn">全部事件</button><button class="tiny-btn">全部角色</button></div></div><table><thead><tr><th>时间</th><th>场景</th><th>角色</th><th>事件</th><th>影响</th><th>可见性</th></tr></thead><tbody>${renderEventRows(project)}</tbody></table></div><div class="card truth-panel"><h2>真相源 / 信息层级</h2>${Object.entries(truthSource).map(([key, val]) => `<div class="metric-line"><b>${truthLabel(key)}</b><span>${val}%</span>${progress(val, key === 'misdirection' ? 'orange' : 'blue')}</div>`).join('')}</div><div class="card character-warning"><h2>角色活跃与掉线预警</h2>${characters.map((char) => `<div class="warning-row"><b>${escapeHtml(char.name)}</b><span>第 ${char.lastAppeared || '-'} 章</span><em class="${char.dropoutRisk > 0.5 ? 'danger-text' : ''}">${formatPct(char.dropoutRisk)}</em><small>建议第 ${(project.currentChapterNumber || 0) + 1} 章</small></div>`).join('')}</div><div class="card"><h2>伏笔生命周期</h2>${foreshadows.slice(-8).map((fb) => `<div class="list-row"><span class="dot-icon">✧</span><div><b>${escapeHtml(fb.name)}</b><small>埋下于第 ${fb.firstChapter} 章，计划第 ${fb.plannedPayoff} 章回收</small></div>${pill(fb.status, fb.risk > 0.5 ? 'red' : 'orange')}</div>`).join('')}</div><div class="card network-card"><h2>角色关系网络（核心）</h2><div class="network"><span class="node center">江离</span><span class="node n1">沈烁</span><span class="node n2">苏照</span><span class="node n3">夜烬</span><span class="node n4">女主线</span></div></div><div class="card test-panel"><h2>检查与测试（小说单元测试）</h2>${tests.map((test) => `<div class="test-row"><span>${test.passed ? '✓' : '!'}</span><b>${escapeHtml(test.name)}</b><em>${test.score}/100</em><small>${escapeHtml(test.note)}</small></div>`).join('')}</div></section>
     </main>
   `;
 }
 
 function renderLedgerPage(project) {
   if (!project) return emptyProjectPanel();
-  const events = project.events.length ? project.events : defaultEvents();
+  const events = (project.events || []).length ? project.events : defaultEvents();
   return `
     <main class="page ledger-page">
       <div class="page-head"><div><h1>事件账本 · 因果链追踪</h1><p>记录每个场景发生的事件、影响、可见性与角色知识边界，供下一章自动检索。</p></div><div class="head-actions"><button class="primary-btn">重建事件账本</button><button class="soft-btn">导出 CSV</button></div></div>
@@ -425,7 +428,8 @@ function renderLedgerPage(project) {
 
 function renderMemoryPage(project) {
   if (!project) return emptyProjectPanel();
-  const latestSummaries = project.chapters.slice(-5).map((ch) => `第${ch.number}章：${ch.title} · ${ch.stateDelta.eventUpdates?.[0] || '状态已更新'}`);
+  const chapters = project.chapters || [];
+  const latestSummaries = chapters.slice(-5).map((ch) => `第${ch.number}章：${ch.title} · ${ch.stateDelta?.eventUpdates?.[0] || '状态已更新'}`);
   const memoryPacks = [
     ['故事蓝图记忆', 'Story Bible、分卷规划、写作风格、禁令规则', 100, 'blue'],
     ['角色状态记忆', '角色目标、关系、知识边界、掉线风险', 86, 'pink'],
@@ -630,6 +634,7 @@ app.addEventListener('click', async (event) => {
 
   if (action === 'generateNextChapter') {
     if (!project) return showToast('请先创建项目', 'error');
+    if (busyText) return showToast('正在生成中，请稍候', 'error');
     busyText = 'AI 正在生成下一章：检索记忆、生成导演稿、写正文、检查与修正……';
     streamProgress = { agent: '', text: '', rewriteAttempt: 0, rewriteReason: '' };
     render();

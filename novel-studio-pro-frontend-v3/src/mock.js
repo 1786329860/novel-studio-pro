@@ -66,7 +66,7 @@ function buildInitialProject(payload) {
   const chaptersPreview = Array.from({ length: 12 }).map((_, index) => ({
     number: index + 1,
     title: makeChapterTitle(index + 1),
-    status: index < 13 ? 'planned' : 'planned'
+    status: 'planned'
   }));
 
   return {
@@ -141,10 +141,12 @@ export const mockApi = {
 
   async buildProject(projectId) {
     await wait(650);
-    const state = getState();
-    const project = state.projects.find((item) => item.id === projectId) || getCurrentProject();
-    if (!project) throw new Error('项目不存在');
-    project.updatedAt = nowIso();
+    updateState((state) => {
+      const project = state.projects.find((item) => item.id === projectId);
+      if (project) project.updatedAt = nowIso();
+      return state;
+    });
+    const project = getCurrentProject();
     return { project, message: 'AI 已完成故事蓝图、分卷规划、角色系统、伏笔与真相源初始化。' };
   },
 
