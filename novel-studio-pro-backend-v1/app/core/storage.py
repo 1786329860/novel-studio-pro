@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 def default_settings() -> dict[str, Any]:
     return {
         "generation": {
-            "mockMode": True,
+            "mockMode": False,
             "generationMode": "standard",
             "qualityThreshold": 85,
             "autoRewriteTimes": 2,
