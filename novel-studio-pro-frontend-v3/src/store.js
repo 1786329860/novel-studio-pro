@@ -21,7 +21,7 @@ const defaultModelRoutes = [
 
 const defaultSettings = {
   mockMode: true,
-  backendBaseUrl: 'http://127.0.0.1:8765',
+  backendBaseUrl: 'https://novel.aixiaolv.icu',
   requestTimeoutMs: 120000,
   retryTimes: 1,
   generationMode: 'standard',
