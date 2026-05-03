@@ -52,7 +52,8 @@ const defaultState = {
   projects: [],
   pendingChapter: null,
   lastJob: null,
-  settings: defaultSettings
+  settings: defaultSettings,
+  viewingChapterIndex: -1
 };
 
 const subscribers = new Set();
@@ -148,6 +149,21 @@ export function resetDemoData() {
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem('novel_studio_pro_frontend_v2_state');
   return setState(defaultState);
+}
+
+export function setViewingChapterIndex(index) {
+  return updateState((state) => {
+    state.viewingChapterIndex = index;
+    return state;
+  });
+}
+
+export function setCurrentProject(projectId) {
+  return updateState((state) => {
+    state.currentProjectId = projectId;
+    state.viewingChapterIndex = -1;
+    return state;
+  });
 }
 
 export { defaultSettings, defaultState };

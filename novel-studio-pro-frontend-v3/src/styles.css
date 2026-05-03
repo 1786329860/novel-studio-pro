@@ -1598,3 +1598,149 @@ td {
     grid-column: auto;
   }
 }
+
+/* 项目切换下拉菜单 */
+.project-select-wrapper {
+  position: relative;
+}
+
+.project-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 260px;
+  background: var(--panel-solid);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  z-index: 15;
+  overflow: hidden;
+}
+
+.project-dropdown.visible {
+  display: block;
+}
+
+.project-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: 0.12s ease;
+  border-bottom: 1px solid rgba(99, 121, 163, 0.08);
+}
+
+.project-dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.project-dropdown-item:hover {
+  background: rgba(111, 176, 255, 0.10);
+}
+
+.project-dropdown-item.active {
+  background: linear-gradient(135deg, rgba(255, 128, 157, 0.12), rgba(169, 101, 255, 0.08));
+}
+
+.check-mark {
+  width: 18px;
+  text-align: center;
+  color: var(--mint);
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.dropdown-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.dropdown-item-info b {
+  display: block;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.dropdown-item-info small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 章节目录 */
+.chapter-dir-card {
+  max-height: 240px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.chapter-list {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.chapter-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.chapter-list::-webkit-scrollbar-thumb {
+  background: rgba(120, 145, 190, 0.18);
+  border-radius: 8px;
+}
+
+.chapter-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: 0.12s ease;
+  border-bottom: 1px solid rgba(99, 121, 163, 0.06);
+}
+
+.chapter-list-item:last-child {
+  border-bottom: none;
+}
+
+.chapter-list-item:hover {
+  background: rgba(111, 176, 255, 0.10);
+}
+
+.chapter-list-item.active {
+  background: linear-gradient(135deg, rgba(255, 128, 157, 0.15), rgba(169, 101, 255, 0.10));
+  border-color: rgba(148, 114, 255, 0.18);
+}
+
+.chapter-list-number {
+  color: var(--muted);
+  font-size: 12px;
+  flex-shrink: 0;
+  min-width: 48px;
+}
+
+.chapter-list-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chapter-list-item.active .chapter-list-title {
+  color: #253456;
+}
+
+/* 写作指南编辑 */
+.guide-textarea {
+  min-height: 180px;
+  margin: 12px 0;
+  font-size: 13px;
+  line-height: 1.7;
+}

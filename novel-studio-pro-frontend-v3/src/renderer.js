@@ -1,5 +1,5 @@
 import { api, toUserError } from './api.js';
-import { getState, setActiveRoute, setSettings, resetDemoData, subscribe } from './store.js';
+import { getState, setActiveRoute, setSettings, resetDemoData, subscribe, setViewingChapterIndex, setCurrentProject, updateProject, updateState } from './store.js';
 
 const app = document.querySelector('#app');
 let busyText = '';
@@ -112,9 +112,10 @@ function renderSidebar(state, project) {
 }
 
 function renderTopbar(state, project) {
+  const projectListHtml = state.projects.length > 1 ? `<div class="project-dropdown" id="project-dropdown">${state.projects.map((p) => `<div class="project-dropdown-item ${p.id === state.currentProjectId ? 'active' : ''}" data-action="switchProject" data-project-id="${escapeHtml(p.id)}">${p.id === state.currentProjectId ? '<span class="check-mark">✓</span>' : '<span class="check-mark"></span>'}<div class="dropdown-item-info"><b>${escapeHtml(p.title || '未命名项目')}</b><small>${p.chapters ? p.chapters.length : 0} 章</small></div></div>`).join('')}</div>` : '';
   return `
     <header class="topbar">
-      <div class="project-select">当前项目：<b>${escapeHtml(project?.title || '未命名项目')}</b><span>⌄</span></div>
+      <div class="project-select-wrapper"><div class="project-select" data-action="showProjectList">当前项目：<b>${escapeHtml(project?.title || '未命名项目')}</b><span>⌄</span></div>${projectListHtml}</div>
       <div class="autosave"><span class="green-dot"></span>自动保存：${new Date().toLocaleTimeString('zh-CN', { hour12: false })}</div>
       <div class="top-actions">
         <button class="soft-btn" data-action="analyzeState">⌁ 智能检查</button>
@@ -338,25 +339,47 @@ function renderTruthPage(project) {
   `;
 }
 
-function renderWritingPage(project, pendingChapter) {
+function renderWritingPage(project, pendingChapter, state) {
   if (!project) return emptyProjectPanel();
-  const chapter = pendingChapter || project.chapters.at(-1) || {
-    number: project.currentChapterNumber + 1,
-    title: '等待生成',
-    wordCount: 0,
-    text: '点击下方「生成下一章」，系统会自动读取故事蓝图、角色状态、伏笔生命周期、事件账本和真相源，然后完成导演稿、正文、检查、修正与状态差异预览。',
-    directorPlan: { goal: '等待自动生成本章目标', pov: '等待视角调度器安排', roleFocus: { 江离: 0, 沈烁: 0 }, forbidden: ['禁止提前揭露最终真相'] },
-    review: { totalScore: project.status.qualityScore || 90, tests: [] },
-    stateDelta: { newForeshadows: [], relationshipChanges: [], eventUpdates: [], timeline: [] }
-  };
+  const viewingIndex = state.viewingChapterIndex;
+  let chapter;
+  let isPending = false;
+  if (pendingChapter && (viewingIndex === -1 || viewingIndex >= project.chapters.length)) {
+    chapter = pendingChapter;
+    isPending = true;
+  } else if (viewingIndex >= 0 && viewingIndex < project.chapters.length) {
+    chapter = project.chapters[viewingIndex];
+  } else {
+    chapter = project.chapters.at(-1) || {
+      number: project.currentChapterNumber + 1,
+      title: '等待生成',
+      wordCount: 0,
+      text: '点击下方「生成下一章」，系统会自动读取故事蓝图、角色状态、伏笔生命周期、事件账本和真相源，然后完成导演稿、正文、检查、修正与状态差异预览。',
+      directorPlan: { goal: '等待自动生成本章目标', pov: '等待视角调度器安排', roleFocus: { 江离: 0, 沈烁: 0 }, forbidden: ['禁止提前揭露最终真相'] },
+      review: { totalScore: project.status.qualityScore || 90, tests: [] },
+      stateDelta: { newForeshadows: [], relationshipChanges: [], eventUpdates: [], timeline: [] }
+    };
+  }
   const roleEntries = Object.entries(chapter.directorPlan.roleFocus || {});
+  const guideText = typeof chapter.directorPlan === 'object' ? [
+    `【本章目标】\n${chapter.directorPlan.goal || ''}`,
+    `【视角安排】\n${chapter.directorPlan.pov || ''}`,
+    `【角色站位】\n${roleEntries.map(([k, v]) => `${k} ${v}%`).join(' / ')}`,
+    `【禁止事项】\n${(chapter.directorPlan.forbidden || []).join('；')}`
+  ].join('\n\n') : '';
+  const chapterListItems = project.chapters.map((ch, idx) => {
+    const isActive = idx === viewingIndex;
+    return `<div class="chapter-list-item ${isActive ? 'active' : ''}" data-action="selectChapter" data-chapter-index="${idx}"><span class="chapter-list-number">第${ch.number}章</span><b class="chapter-list-title">${escapeHtml(ch.title)}</b><span class="pill mint">已确认</span></div>`;
+  }).join('');
+  const pendingItem = pendingChapter ? `<div class="chapter-list-item ${viewingIndex === -1 || viewingIndex >= project.chapters.length ? 'active' : ''}" data-action="selectChapter" data-chapter-index="-1"><span class="chapter-list-number">第${pendingChapter.number}章</span><b class="chapter-list-title">${escapeHtml(pendingChapter.title)}</b><span class="pill orange">待确认</span></div>` : '';
   return `
     <main class="page writing-grid">
       <aside class="left-cards">
-        <section class="card guide-card"><div class="section-title"><h2>本章写作指南</h2><button class="tiny-btn">编辑</button></div><div class="guide-block"><b>本章目标</b><p>${escapeHtml(chapter.directorPlan.goal)}</p></div><div class="guide-block"><b>视角安排</b><p>${escapeHtml(chapter.directorPlan.pov)}</p></div><div class="guide-block"><b>角色站位</b><p>${roleEntries.map(([k, v]) => `${escapeHtml(k)} ${v}%`).join(' / ')}</p></div><div class="guide-block danger"><b>禁止事项</b><p>${(chapter.directorPlan.forbidden || []).map(escapeHtml).join('；')}</p></div></section>
+        <section class="card chapter-dir-card"><div class="section-title"><h2>章节目录</h2></div><div class="chapter-list">${chapterListItems}${pendingItem}</div></section>
+        <section class="card guide-card" id="guide-card"><div class="section-title"><h2>本章写作指南</h2><button class="tiny-btn" data-action="editGuide">编辑</button></div><div class="guide-block"><b>本章目标</b><p>${escapeHtml(chapter.directorPlan.goal)}</p></div><div class="guide-block"><b>视角安排</b><p>${escapeHtml(chapter.directorPlan.pov)}</p></div><div class="guide-block"><b>角色站位</b><p>${roleEntries.map(([k, v]) => `${escapeHtml(k)} ${v}%`).join(' / ')}</p></div><div class="guide-block danger"><b>禁止事项</b><p>${(chapter.directorPlan.forbidden || []).map(escapeHtml).join('；')}</p></div></section>
         <section class="card progress-card"><h2>章节进度</h2>${[['主线推进', project.status.mainProgress || 0, 'blue'], ['女主戏份', roleEntries.find(([k]) => k.includes('沈'))?.[1] || 35, 'pink'], ['伏笔风险', 28, 'orange'], ['偏离风险', project.status.deviationRisk * 100, 'mint']].map(([a, b, c]) => `<div class="metric-line"><b>${a}</b><span>${Math.round(b)}%</span>${progress(b, c)}</div>`).join('')}</section>
       </aside>
-      <section class="card editor-card"><div class="chapter-head"><div><h1>第 ${chapter.number} 章 · ${escapeHtml(chapter.title)}</h1><p>视角：江离　时段：自动判断　字数：${number(chapter.wordCount)}</p></div><button class="circle-btn">···</button></div><article class="novel-text">${escapeHtml(chapter.text).split('\n').map((p) => p ? `<p>${p}</p>` : '<br/>').join('')}</article><div class="editor-footer"><span>字数统计：${number(chapter.wordCount)}</span><span>预计本章字数：${number(getState().settings.chapterWordTargetMin)} - ${number(getState().settings.chapterWordTargetMax)}</span><button class="tiny-btn">写作模式⌄</button></div><div class="chapter-actions"><button class="soft-btn" data-action="generateNextChapter">重写本章</button><button class="next-btn" data-action="generateNextChapter">✦ 生成下一章</button>${pendingChapter ? `<button class="primary-btn" data-action="confirmChapter">确认本章入库</button>` : `<button class="soft-btn">继续写作</button>`}</div></section>
+      <section class="card editor-card"><div class="chapter-head"><div><h1>第 ${chapter.number} 章 · ${escapeHtml(chapter.title)}</h1><p>视角：江离　时段：自动判断　字数：${number(chapter.wordCount)}</p></div><button class="circle-btn">···</button></div><article class="novel-text">${escapeHtml(chapter.text).split('\n').map((p) => p ? `<p>${p}</p>` : '<br/>').join('')}</article><div class="editor-footer"><span>字数统计：${number(chapter.wordCount)}</span><span>预计本章字数：${number(getState().settings.chapterWordTargetMin)} - ${number(getState().settings.chapterWordTargetMax)}</span><button class="tiny-btn">写作模式⌄</button></div><div class="chapter-actions"><button class="soft-btn" data-action="generateNextChapter">重写本章</button><button class="next-btn" data-action="generateNextChapter">✦ 生成下一章</button>${isPending ? `<button class="primary-btn" data-action="confirmChapter">确认本章入库</button>` : `<button class="soft-btn">继续写作</button>`}</div></section>
       <aside class="right-panel"><section class="card ai-director"><h2>AI 自动导演</h2><div class="preview-card"><h3>当前主线</h3><p>${escapeHtml(project.storyBible.mainConflict)}</p>${progress(project.status.mainProgress || 0, 'blue')}</div><div class="preview-card"><h3>下一转折</h3><p>系统将根据事件账本和伏笔风险自动安排下一次冲突或揭示。</p></div></section><section class="card risk-card"><h2>风险预警</h2><div class="ring-row"><div class="ring">28%<small>伏笔风险</small></div><div class="ring green">${Math.round(project.status.deviationRisk * 100)}%<small>偏离风险</small></div></div></section><section class="card"><h2>角色活跃度</h2>${project.characters.slice(0, 4).map((char) => `<div class="metric-line"><b>${escapeHtml(char.name)}</b><span>${Math.round((1 - char.dropoutRisk) * 100)}%</span>${progress((1 - char.dropoutRisk) * 100, 'pink')}</div>`).join('')}</section><section class="card"><h2>AI 质量评分</h2><div class="score-big">${chapter.review.totalScore || project.status.qualityScore}<small>/100</small></div>${(chapter.review.tests || []).slice(0, 4).map((test) => `<div class="test-row"><span>${test.passed ? '✓' : '!'}</span><b>${escapeHtml(test.name)}</b><em>${test.score}/100</em></div>`).join('')}</section></aside>
       <section class="card state-delta"><h2>状态变化（本章结束后）</h2>${[['新增信息', chapter.stateDelta.newForeshadows || []], ['角色关系变化', chapter.stateDelta.relationshipChanges || []], ['事件更新', chapter.stateDelta.eventUpdates || []], ['时间线', chapter.stateDelta.timeline || []]].map(([title, list]) => `<div><h3>${title}</h3><ul>${list.length ? list.map((x) => `<li>${escapeHtml(x)}</li>`).join('') : '<li>等待生成后显示</li>'}</ul></div>`).join('')}</section>
     </main>
@@ -541,7 +564,7 @@ function renderMain(state, project) {
   if (route === 'blueprint') return renderBlueprintPage(project);
   if (route === 'characters') return renderCharactersPage(project);
   if (route === 'truth') return renderTruthPage(project);
-  if (route === 'writing') return renderWritingPage(project, state.pendingChapter);
+  if (route === 'writing') return renderWritingPage(project, state.pendingChapter, state);
   if (route === 'status') return renderStatusPage(project);
   if (route === 'ledger') return renderLedgerPage(project);
   if (route === 'memory') return renderMemoryPage(project);
@@ -605,6 +628,112 @@ app.addEventListener('click', async (event) => {
   if (action === 'resetDemo') {
     resetDemoData();
     showToast('本地演示数据已清空。');
+  }
+
+  if (action === 'editGuide') {
+    const guideCard = document.querySelector('#guide-card');
+    if (!guideCard) return;
+    const state = getState();
+    const project = getProject(state);
+    if (!project) return;
+    const viewingIndex = state.viewingChapterIndex;
+    let chapter;
+    if (state.pendingChapter && (viewingIndex === -1 || viewingIndex >= project.chapters.length)) {
+      chapter = state.pendingChapter;
+    } else if (viewingIndex >= 0 && viewingIndex < project.chapters.length) {
+      chapter = project.chapters[viewingIndex];
+    } else {
+      chapter = project.chapters.at(-1);
+    }
+    if (!chapter) return;
+    const roleEntries = Object.entries(chapter.directorPlan.roleFocus || {});
+    const guideText = [
+      `【本章目标】\n${chapter.directorPlan.goal || ''}`,
+      `【视角安排】\n${chapter.directorPlan.pov || ''}`,
+      `【角色站位】\n${roleEntries.map(([k, v]) => `${k} ${v}%`).join(' / ')}`,
+      `【禁止事项】\n${(chapter.directorPlan.forbidden || []).join('；')}`
+    ].join('\n\n');
+    guideCard.querySelector('.section-title').innerHTML = '<h2>本章写作指南</h2>';
+    guideCard.querySelector('.section-title').insertAdjacentHTML('beforeend', '<button class="tiny-btn" data-action="saveGuide">保存</button><button class="tiny-btn" data-action="cancelGuide">取消</button>');
+    const guideContent = guideCard.querySelectorAll('.guide-block');
+    guideContent.forEach((el) => el.style.display = 'none');
+    const textarea = document.createElement('textarea');
+    textarea.className = 'textarea guide-textarea';
+    textarea.value = guideText;
+    guideCard.appendChild(textarea);
+    textarea.focus();
+  }
+
+  if (action === 'saveGuide') {
+    const guideCard = document.querySelector('#guide-card');
+    if (!guideCard) return;
+    const textarea = guideCard.querySelector('.guide-textarea');
+    if (!textarea) return;
+    const raw = textarea.value;
+    const parseSection = (text, label) => {
+      const regex = new RegExp(`【${label}】\\s*([\\s\\S]*?)(?=【|$)`);
+      const match = raw.match(regex);
+      return match ? match[1].trim() : '';
+    };
+    const goal = parseSection(raw, '本章目标');
+    const pov = parseSection(raw, '视角安排');
+    const roleFocusRaw = parseSection(raw, '角色站位');
+    const forbiddenRaw = parseSection(raw, '禁止事项');
+    const roleFocus = {};
+    roleFocusRaw.split('/').forEach((part) => {
+      const m = part.trim().match(/^(.+?)\s+(\d+)%$/);
+      if (m) roleFocus[m[1].trim()] = Number(m[2]);
+    });
+    const forbidden = forbiddenRaw.split(/[；;]/).map((s) => s.trim()).filter(Boolean);
+    const state = getState();
+    const project = getProject(state);
+    if (!project) return;
+    const viewingIndex = state.viewingChapterIndex;
+    const isPending = state.pendingChapter && (viewingIndex === -1 || viewingIndex >= project.chapters.length);
+    const newPlan = { goal, pov, roleFocus, forbidden };
+    if (isPending) {
+      updateState((s) => {
+        if (s.pendingChapter) {
+          s.pendingChapter.directorPlan = newPlan;
+        }
+        return s;
+      });
+    } else {
+      const chapterIdx = viewingIndex >= 0 && viewingIndex < project.chapters.length ? viewingIndex : project.chapters.length - 1;
+      if (chapterIdx >= 0) {
+        updateProject(project.id, (p) => {
+          if (p.chapters[chapterIdx]) {
+            p.chapters[chapterIdx].directorPlan = newPlan;
+          }
+          return p;
+        });
+      }
+    }
+    showToast('写作指南已保存。');
+  }
+
+  if (action === 'cancelGuide') {
+    render();
+  }
+
+  if (action === 'selectChapter') {
+    const index = parseInt(actionButton.dataset.chapterIndex, 10);
+    setViewingChapterIndex(index);
+  }
+
+  if (action === 'showProjectList') {
+    const dropdown = document.querySelector('#project-dropdown');
+    if (dropdown) {
+      dropdown.classList.toggle('visible');
+    }
+  }
+
+  if (action === 'switchProject') {
+    const projectId = actionButton.dataset.projectId;
+    if (projectId) {
+      setCurrentProject(projectId);
+      showToast('已切换项目。');
+    }
   }
 });
 
@@ -676,6 +805,16 @@ app.addEventListener('submit', async (event) => {
       deepseekApiKeySet: apiKey ? true : getState().settings.deepseekApiKeySet
     });
     showToast(apiKey ? 'DeepSeek 设置已保存，API Key 状态已更新。' : 'DeepSeek 设置已保存。');
+  }
+});
+
+document.addEventListener('click', (event) => {
+  const dropdown = document.querySelector('#project-dropdown');
+  if (dropdown && dropdown.classList.contains('visible')) {
+    const wrapper = event.target.closest('.project-select-wrapper');
+    if (!wrapper) {
+      dropdown.classList.remove('visible');
+    }
   }
 });
 
