@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "electron .",
     "start": "electron .",
-    "dist": "electron-builder --win nsis",
+    "dist": "electron-builder --win",
     "check": "node --check main.js && node --check preload.js"
   },
   "dependencies": {},
@@ -31,20 +31,12 @@
       "package.json"
     ],
     "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": ["x64"]
-        }
-      ],
-      "icon": null
+      "sign": false,
+      "target": "nsis"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": null,
-      "uninstallerIcon": null,
-      "installerHeaderIcon": null,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Novel Studio Pro"
