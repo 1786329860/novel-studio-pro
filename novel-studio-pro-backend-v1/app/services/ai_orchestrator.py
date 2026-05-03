@@ -687,22 +687,30 @@ async def _run_full_pipeline(
 
     # 步骤 4: 角色戏份规划
     logger.info("[Pipeline] 步骤 4/9: 角色戏份规划...")
-    char_director_ctx = context_builder.build_director_context(project, constraints)
+    target_total_words = options.get("maxWords", 5000)
+    min_words = options.get("minWords", 3000)
+    char_director_ctx = context_builder.build_director_context(
+        project, constraints,
+        target_total_words=target_total_words,
+        min_words=min_words,
+    )
     char_director_ctx["project"] = project
     char_director_ctx["constraints"] = constraints
     char_plan = await CharacterDirectorAgent().run(char_director_ctx)
 
     # 步骤 5: 导演稿生成（使用角色规划结果）
     logger.info("[Pipeline] 步骤 5/9: 导演稿生成...")
-    director_ctx = context_builder.build_director_context(project, constraints)
+    director_ctx = context_builder.build_director_context(
+        project, constraints,
+        target_total_words=target_total_words,
+        min_words=min_words,
+    )
     director_ctx["project"] = project
     director_ctx["character_plan"] = char_plan.get("character_plan", {})
     director_plan = await DirectorAgent().run(director_ctx)
 
     # 步骤 6: 正文写作
     logger.info("[Pipeline] 步骤 6/9: 正文写作...")
-    target_total_words = options.get("maxWords", 5000)
-    min_words = options.get("minWords", 3000)
     writer_ctx = context_builder.build_writer_context(
         project, constraints, director_plan,
         target_total_words=target_total_words,
@@ -922,7 +930,13 @@ async def generate_next_chapter_stream(
 
             # 步骤 4: 角色戏份规划
             yield {"type": "agent_start", "agent": "character_director"}
-            char_director_ctx = context_builder.build_director_context(project, constraints)
+            stream_target_total_words = rewrite_options.get("maxWords", 5000)
+            stream_min_words = rewrite_options.get("minWords", 3000)
+            char_director_ctx = context_builder.build_director_context(
+                project, constraints,
+                target_total_words=stream_target_total_words,
+                min_words=stream_min_words,
+            )
             char_director_ctx["project"] = project
             char_director_ctx["constraints"] = constraints
             char_plan = await CharacterDirectorAgent().run(char_director_ctx)
@@ -930,7 +944,11 @@ async def generate_next_chapter_stream(
 
             # 步骤 5: 导演稿生成（使用角色规划结果）
             yield {"type": "agent_start", "agent": "director"}
-            director_ctx = context_builder.build_director_context(project, constraints)
+            director_ctx = context_builder.build_director_context(
+                project, constraints,
+                target_total_words=stream_target_total_words,
+                min_words=stream_min_words,
+            )
             director_ctx["project"] = project
             director_ctx["character_plan"] = char_plan.get("character_plan", {})
             director_plan = await DirectorAgent().run(director_ctx)
@@ -938,8 +956,6 @@ async def generate_next_chapter_stream(
 
             # 步骤 6: 正文写作（流式）
             yield {"type": "agent_start", "agent": "writer"}
-            stream_target_total_words = rewrite_options.get("maxWords", 5000)
-            stream_min_words = rewrite_options.get("minWords", 3000)
             writer_ctx = context_builder.build_writer_context(
                 project, constraints, director_plan,
                 target_total_words=stream_target_total_words,

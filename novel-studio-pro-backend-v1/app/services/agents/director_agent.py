@@ -57,6 +57,17 @@ class DirectorAgent(BaseAgent):
         Returns:
             消息列表
         """
+        # 根据目标字数动态计算推荐场景数量
+        target_words = context.get("target_total_words", 5000)
+        if target_words <= 2000:
+            scene_hint = "1-2 个场景（目标字数较少，每个场景应有足够篇幅展开）"
+        elif target_words <= 4000:
+            scene_hint = "2-3 个场景"
+        elif target_words <= 6000:
+            scene_hint = "3-4 个场景"
+        else:
+            scene_hint = "4-6 个场景"
+
         system_prompt = (
             "你是小说自动化创作系统的【导演稿 Agent】。\n"
             "你的任务是根据约束条件和项目状态，为下一章规划 3-6 个场景的导演稿。\n\n"
@@ -81,7 +92,7 @@ class DirectorAgent(BaseAgent):
             '  "pacing": "节奏描述（如：缓起-渐紧-高潮-余韵）"\n'
             "}\n\n"
             "关键规则：\n"
-            "1. 场景数量控制在 3-6 个，根据约束中的 must_happen 合理分配\n"
+            f"1. 场景数量控制在 {scene_hint}，根据约束中的 must_happen 合理分配\n"
             "2. 每个场景必须遵守约束中的 character_allocation\n"
             "3. 场景的视角必须符合 pov_plan\n"
             "4. 伏笔处理必须按 foreshadow_actions 的指令安排到对应场景\n"

@@ -242,6 +242,14 @@ class WriterAgent(BaseAgent):
             scenes, target_total_words
         )
 
+        # Account for transition paragraphs between scenes
+        n_transitions = max(0, len(scenes) - 1)
+        transition_reserve = int(n_transitions * 80)  # ~80 chars per transition
+        if transition_reserve > 0 and target_total_words > transition_reserve:
+            # Reduce targets proportionally
+            reduction_ratio = (target_total_words - transition_reserve) / target_total_words
+            scene_word_counts = [max(200, int(w * reduction_ratio)) for w in scene_word_counts]
+
         scene_texts: list[str] = []
         previous_scene_text = ""
 
@@ -329,6 +337,14 @@ class WriterAgent(BaseAgent):
         scene_word_counts = self._allocate_word_counts(
             scenes, target_total_words
         )
+
+        # Account for transition paragraphs between scenes
+        n_transitions = max(0, len(scenes) - 1)
+        transition_reserve = int(n_transitions * 80)  # ~80 chars per transition
+        if transition_reserve > 0 and target_total_words > transition_reserve:
+            # Reduce targets proportionally
+            reduction_ratio = (target_total_words - transition_reserve) / target_total_words
+            scene_word_counts = [max(200, int(w * reduction_ratio)) for w in scene_word_counts]
 
         scene_texts: list[str] = []
         previous_scene_text = ""

@@ -113,6 +113,8 @@ class ContextBuilder:
         self,
         project: dict[str, Any],
         constraints: dict[str, Any],
+        target_total_words: int = 5000,
+        min_words: int = 3000,
     ) -> dict[str, Any]:
         """为导演 Agent 构建上下文。
 
@@ -121,6 +123,8 @@ class ContextBuilder:
         Args:
             project: 完整的项目数据
             constraints: 约束 Agent 的输出
+            target_total_words: 目标总字数（maxWords）
+            min_words: 最低字数（minWords）
 
         Returns:
             导演 Agent 所需的上下文包
@@ -135,7 +139,11 @@ class ContextBuilder:
         context["mainConflict"] = story_bible.get("mainConflict", "")
         context["endingDirection"] = story_bible.get("endingDirection", "")
 
-        logger.info("[ContextBuilder] 导演上下文构建完成")
+        # 字数控制信息
+        context["target_total_words"] = target_total_words
+        context["min_words"] = min_words
+
+        logger.info("[ContextBuilder] 导演上下文构建完成 (目标字数: %d-%d)", min_words, target_total_words)
         return context
 
     def build_writer_context(
