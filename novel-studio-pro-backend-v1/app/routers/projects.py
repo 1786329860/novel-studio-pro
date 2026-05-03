@@ -51,13 +51,26 @@ async def test_connection():
     """测试后端与 DeepSeek 的连通性"""
     from app.core.config import config
     from app.services.deepseek_client import DeepSeekClient
+    from app.services import settings_service
+    from app.core.storage import store
 
-    if not config.use_deepseek:
-        return {"ok": False, "message": "DeepSeek 未启用（USE_DEEPSEEK=false）"}
-    if not config.deepseek_api_key:
-        return {"ok": False, "message": "API Key 未配置"}
+    # 自动同步 .env 配置到 JSON 存储
+    if config.use_deepseek and config.deepseek_api_key:
+        data = store.read()
+        ds = data.get("settings", {}).get("deepseek", {})
+        if not ds.get("enabled") or not ds.get("apiKey"):
+            ds["enabled"] = True
+            ds["apiKey"] = config.deepseek_api_key
+            ds["baseUrl"] = config.deepseek_base_url
+            ds["mainModel"] = config.deepseek_main_model
+            ds["fastModel"] = config.deepseek_fast_model
+            data.setdefault("settings", {})["deepseek"] = ds
+            store.write(data)
 
     client = DeepSeekClient()
+    if not client.is_ready():
+        return {"ok": False, "message": f"DeepSeek 未启用。请检查 .env 中 USE_DEEPSEEK=true 和 DEEPSEEK_API_KEY 是否配置。当前 enabled={settings_service.get_deepseek(safe=False).get('enabled')}, apiKey={'有' if config.deepseek_api_key else '无'}"}
+
     try:
         result = await client.chat(
             messages=[{"role": "user", "content": "你好，请回复\"连接正常\""}],
@@ -74,9 +87,26 @@ async def test_model(body: dict = Body(...)):
     """测试指定模型的连通性"""
     from app.core.config import config
     from app.services.deepseek_client import DeepSeekClient
+    from app.services import settings_service
+    from app.core.storage import store
+
+    # 自动同步 .env 配置到 JSON 存储
+    if config.use_deepseek and config.deepseek_api_key:
+        data = store.read()
+        ds = data.get("settings", {}).get("deepseek", {})
+        if not ds.get("enabled") or not ds.get("apiKey"):
+            ds["enabled"] = True
+            ds["apiKey"] = config.deepseek_api_key
+            ds["baseUrl"] = config.deepseek_base_url
+            ds["mainModel"] = config.deepseek_main_model
+            ds["fastModel"] = config.deepseek_fast_model
+            data.setdefault("settings", {})["deepseek"] = ds
+            store.write(data)
 
     model = body.get("model", config.deepseek_main_model)
     client = DeepSeekClient()
+    if not client.is_ready():
+        return {"ok": False, "model": model, "message": "DeepSeek 未启用，请先点击连接测试自动同步配置"}
     try:
         result = await client.chat(
             messages=[{"role": "user", "content": "测试"}],
