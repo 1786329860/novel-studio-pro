@@ -932,6 +932,9 @@ async def generate_next_chapter_stream(
             yield {"type": "agent_start", "agent": "character_director"}
             stream_target_total_words = rewrite_options.get("maxWords", 5000)
             stream_min_words = rewrite_options.get("minWords", 3000)
+            logger.info("[GenerateChapter] 字数设置: minWords=%s, maxWords=%s (options keys: %s)",
+                        stream_min_words, stream_target_total_words,
+                        list(rewrite_options.keys()))
             char_director_ctx = context_builder.build_director_context(
                 project, constraints,
                 target_total_words=stream_target_total_words,
