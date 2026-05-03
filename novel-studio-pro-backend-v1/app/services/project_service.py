@@ -77,6 +77,7 @@ class ProjectService:
     async def build_project(self, project_id: str) -> dict[str, Any]:
         project = self.get_project(project_id)
         blueprint = await ai_orchestrator.build_story_blueprint(project)
+        blueprint = ai_orchestrator._normalize_blueprint(blueprint)
 
         def mut(data: dict[str, Any]) -> dict[str, Any]:
             current = data["projects"][project_id]

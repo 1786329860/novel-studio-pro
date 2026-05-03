@@ -293,6 +293,168 @@ async def maybe_deepseek_blueprint(project: dict[str, Any]) -> dict[str, Any] | 
         return None
 
 
+def _normalize_blueprint(data: dict[str, Any]) -> dict[str, Any]:
+    """标准化 AI 返回的蓝图数据，确保字段名与前端期望一致。"""
+    if not data:
+        return data
+
+    sb = data.get("storyBible", data.get("story_bible", {}))
+    if not isinstance(sb, dict):
+        sb = {}
+
+    # 标准化 storyBible 字段名
+    field_map = {
+        "core_premise": "corePremise",
+        "corePremise": "corePremise",
+        "main_theme": "mainTheme",
+        "mainTheme": "mainTheme",
+        "main_conflict": "mainConflict",
+        "mainConflict": "mainConflict",
+        "ending_direction": "endingDirection",
+        "endingDirection": "endingDirection",
+        "writing_style": "style",
+        "style": "style",
+        "style_profile": "styleProfile",
+        "styleProfile": "styleProfile",
+        "forbidden_rules": "forbiddenRules",
+        "forbiddenRules": "forbiddenRules",
+        "genre": "genre",
+        "volume_plan": "volumePlan",
+        "volumePlan": "volumePlan",
+        "stage_plan": "stagePlan",
+        "stagePlan": "stagePlan",
+        "chapter_title_preview": "chapterTitlePreview",
+        "chapterTitlePreview": "chapterTitlePreview",
+        "truth_source": "truthSource",
+        "truthSource": "truthSource",
+    }
+
+    normalized_sb = {}
+    for key, value in sb.items():
+        mapped_key = field_map.get(key, key)
+        normalized_sb[mapped_key] = value
+
+    # 确保 storyBible 有所有必要字段
+    normalized_sb.setdefault("corePremise", "")
+    normalized_sb.setdefault("mainTheme", "")
+    normalized_sb.setdefault("mainConflict", "")
+    normalized_sb.setdefault("endingDirection", "")
+    normalized_sb.setdefault("style", "")
+    normalized_sb.setdefault("styleProfile", "")
+    normalized_sb.setdefault("forbiddenRules", [])
+    normalized_sb.setdefault("genre", "")
+
+    data["storyBible"] = normalized_sb
+
+    # 标准化 volumePlan
+    vp = data.get("volumePlan", data.get("volume_plan", []))
+    if isinstance(vp, list):
+        for vol in vp:
+            vol.setdefault("name", "未命名卷")
+            vol.setdefault("range", "")
+            vol.setdefault("objective", "")
+            vol.setdefault("turningPoint", vol.get("turning_point", ""))
+            vol.setdefault("tone", "")
+            vol.setdefault("status", "planned")
+            vol.setdefault("coverGradient", "linear-gradient(135deg, #667eea, #764ba2)")
+        data["volumePlan"] = vp
+
+    # 标准化 stagePlan
+    sp = data.get("stagePlan", data.get("stage_plan", []))
+    if isinstance(sp, list):
+        for stage in sp:
+            stage.setdefault("name", "")
+            stage.setdefault("chapterRange", stage.get("chapter_range", ""))
+            stage.setdefault("description", stage.get("desc", ""))
+            stage.setdefault("keyEvents", stage.get("key_events", ""))
+        data["stagePlan"] = sp
+
+    # 标准化 chapterTitlePreview
+    ctp = data.get("chapterTitlePreview", data.get("chapter_title_preview", []))
+    if isinstance(ctp, list):
+        for i, ch in enumerate(ctp):
+            ch.setdefault("number", i + 1)
+            ch.setdefault("title", f"第{i+1}章")
+        data["chapterTitlePreview"] = ctp
+    else:
+        data["chapterTitlePreview"] = []
+
+    # 标准化 characters
+    chars = data.get("characters", [])
+    if isinstance(chars, list):
+        for i, char in enumerate(chars):
+            char.setdefault("id", char.get("id", f"char_{i+1}"))
+            char.setdefault("name", "未命名角色")
+            char.setdefault("role", "配角")
+            char.setdefault("personality", "")
+            char.setdefault("background", "")
+            char.setdefault("currentGoal", "")
+            char.setdefault("hiddenGoal", "")
+            char.setdefault("emotion", "")
+            char.setdefault("agencyScore", 0.5)
+            char.setdefault("dropoutRisk", 0.2)
+            char.setdefault("speakingStyle", "")
+            char.setdefault("lastAppearedChapter", 0)
+            char.setdefault("knowledgeState", [])
+        data["characters"] = chars
+
+    # 标准化 foreshadows
+    fs = data.get("foreshadows", [])
+    if isinstance(fs, list):
+        for i, f in enumerate(fs):
+            f.setdefault("id", f.get("id", f"fs_{i+1}"))
+            f.setdefault("name", "未命名伏笔")
+            f.setdefault("description", "")
+            f.setdefault("status", "planted")
+            f.setdefault("plantedChapter", 1)
+            f.setdefault("lastMentionedChapter", 1)
+            f.setdefault("plannedPayoffChapter", f.get("planned_payoff_chapter", 50))
+            f.setdefault("importance", "medium")
+            f.setdefault("risk", 0.3)
+            f.setdefault("nextAction", "")
+        data["foreshadows"] = fs
+
+    # 标准化 relationships
+    rels = data.get("relationships", [])
+    if isinstance(rels, list):
+        for rel in rels:
+            rel.setdefault("from", "角色A")
+            rel.setdefault("to", "角色B")
+            rel.setdefault("type", "未知")
+            rel.setdefault("description", "")
+            rel.setdefault("trust", 50)
+            rel.setdefault("tension", 30)
+            rel.setdefault("tone", "blue")
+        data["relationships"] = rels
+
+    # 标准化 truthSource
+    ts = data.get("truthSource", data.get("truth_source", {}))
+    if isinstance(ts, dict):
+        ts.setdefault("ultimateTruth", "")
+        ts.setdefault("revealPace", "")
+        ts.setdefault("forbiddenReveals", [])
+        data["truthSource"] = ts
+
+    # 标准化 status
+    status = data.get("status", {})
+    if isinstance(status, dict):
+        status.setdefault("mainProgress", 0)
+        status.setdefault("qualityScore", 85)
+        status.setdefault("deviationRisk", 0.1)
+        status.setdefault("dropoutRisk", 0.1)
+        status.setdefault("tests", [])
+        data["status"] = status
+
+    # 标准化 memory
+    mem = data.get("memory", {})
+    if isinstance(mem, dict):
+        mem.setdefault("chapterSummaries", [])
+        mem.setdefault("stateSnapshots", [])
+        data["memory"] = mem
+
+    return data
+
+
 async def build_story_blueprint(project: dict[str, Any], variant: str = "standard") -> dict[str, Any]:
     """构建故事蓝图。
 
@@ -300,6 +462,7 @@ async def build_story_blueprint(project: dict[str, Any], variant: str = "standar
     """
     ai_data = await maybe_deepseek_blueprint(project)
     if ai_data:
+        ai_data = _normalize_blueprint(ai_data)
         return ai_data
     logger.warning("[Blueprint] DeepSeek 未就绪，使用 Mock 蓝图生成。请检查 .env 中 USE_DEEPSEEK=true 和 DEEPSEEK_API_KEY 是否配置。")
     return build_mock_blueprint(project, variant=variant)
