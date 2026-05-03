@@ -1451,9 +1451,20 @@ td {
 }
 
 .table-search {
-  width: 240px;
-  height: 36px;
+  width: 100%;
+  max-width: 300px;
   padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-solid);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.table-search:focus {
+  border-color: var(--accent);
 }
 
 .timeline-item {

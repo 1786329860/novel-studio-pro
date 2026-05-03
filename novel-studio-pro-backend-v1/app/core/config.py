@@ -49,6 +49,11 @@ class AppConfig:
     use_sqlite: bool = _bool(os.getenv("USE_SQLITE"), True)
     database_url: str = os.getenv("DATABASE_URL", "data/novel_studio.db")
 
+    # Embedding 配置（硅基流动）
+    siliconflow_api_key: str = os.getenv("SILICONFLOW_API_KEY", "")
+    siliconflow_base_url: str = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
+    embedding_model: str = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+
 
 config = AppConfig()
 config.data_dir.mkdir(parents=True, exist_ok=True)

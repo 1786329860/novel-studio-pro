@@ -621,6 +621,18 @@ async def _run_full_pipeline(
         review.get("total_score", "N/A"),
     )
 
+    # 为新章节生成 Embedding
+    try:
+        from app.services.embedding_client import embedding_client
+        new_chapter_content = result.get("text", "")
+        if embedding_client.api_key and new_chapter_content:
+            emb = embedding_client.embed_query(f"第{number}章 {title}\n{new_chapter_content[:1000]}")
+            if emb:
+                result["embedding"] = emb
+                logger.info("[Pipeline] 已为第%d章生成 Embedding 向量 (dim=%d)", number, len(emb))
+    except Exception as emb_exc:
+        logger.warning("[Pipeline] Embedding 生成失败，不影响主流程: %s", emb_exc)
+
     return result
 
 
@@ -824,6 +836,18 @@ async def generate_next_chapter_stream(
                 "constraints": constraints,
                 "createdAt": now_iso(),
             }
+
+            # 为新章节生成 Embedding
+            try:
+                from app.services.embedding_client import embedding_client
+                new_chapter_content = chapter.get("text", "")
+                if embedding_client.api_key and new_chapter_content:
+                    emb = embedding_client.embed_query(f"第{number}章 {title}\n{new_chapter_content[:1000]}")
+                    if emb:
+                        chapter["embedding"] = emb
+                        logger.info("[Pipeline-Stream] 已为第%d章生成 Embedding 向量 (dim=%d)", number, len(emb))
+            except Exception as emb_exc:
+                logger.warning("[Pipeline-Stream] Embedding 生成失败，不影响主流程: %s", emb_exc)
 
             # 检查质量评分，决定是否重写
             total_score = int(review.get("total_score", review.get("totalScore", 100)))

@@ -343,6 +343,104 @@ export const api = {
       () => mockApi.analyzeState(projectId),
       async () => request(`/api/projects/${projectId}/state/analyze`, { method: 'POST' })
     );
+  },
+
+  /**
+   * 测试后端连接
+   */
+  async testConnection() {
+    const baseUrl = getSettings().backendBaseUrl.replace(/\/$/, '');
+    const response = await fetch(`${baseUrl}/api/test-connection`);
+    return response.json();
+  },
+
+  /**
+   * 测试模型连通性
+   */
+  async testModel(model) {
+    const baseUrl = getSettings().backendBaseUrl.replace(/\/$/, '');
+    const response = await fetch(`${baseUrl}/api/test-model`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model })
+    });
+    return response.json();
+  },
+
+  /**
+   * 测试 Embedding 服务
+   */
+  async testEmbedding() {
+    const baseUrl = getSettings().backendBaseUrl.replace(/\/$/, '');
+    const response = await fetch(`${baseUrl}/api/test-embedding`);
+    return response.json();
+  },
+
+  /**
+   * 获取请求日志
+   */
+  async getRequestLogs(limit = 20) {
+    const baseUrl = getSettings().backendBaseUrl.replace(/\/$/, '');
+    const response = await fetch(`${baseUrl}/api/request-logs?limit=${limit}`);
+    return response.json();
+  },
+
+  /**
+   * 导出角色表
+   */
+  async exportCharacters(projectId) {
+    const baseUrl = getSettings().backendBaseUrl.replace(/\/$/, '');
+    const response = await fetch(`${baseUrl}/api/projects/${projectId}/export-characters`);
+    return response.json();
+  },
+
+  /**
+   * 导出事件账本
+   */
+  async exportEvents(projectId) {
+    const baseUrl = getSettings().backendBaseUrl.replace(/\/$/, '');
+    const response = await fetch(`${baseUrl}/api/projects/${projectId}/export-events`);
+    return response.json();
+  },
+
+  /**
+   * 重建事件账本
+   */
+  async rebuildLedger(projectId) {
+    const baseUrl = getSettings().backendBaseUrl.replace(/\/$/, '');
+    const response = await fetch(`${baseUrl}/api/projects/${projectId}/rebuild-ledger`, { method: 'POST' });
+    return response.json();
+  },
+
+  /**
+   * 重建全局记忆（生成 Embedding）
+   */
+  async rebuildMemory(projectId) {
+    const baseUrl = getSettings().backendBaseUrl.replace(/\/$/, '');
+    const response = await fetch(`${baseUrl}/api/projects/${projectId}/rebuild-memory`, { method: 'POST' });
+    return response.json();
+  },
+
+  /**
+   * 压缩历史正文
+   */
+  async compressHistory(projectId) {
+    const baseUrl = getSettings().backendBaseUrl.replace(/\/$/, '');
+    const response = await fetch(`${baseUrl}/api/projects/${projectId}/compress-history`, { method: 'POST' });
+    return response.json();
+  },
+
+  /**
+   * 语义搜索
+   */
+  async semanticSearch(projectId, query, type = 'chapters', topK = 5) {
+    const baseUrl = getSettings().backendBaseUrl.replace(/\/$/, '');
+    const response = await fetch(`${baseUrl}/api/projects/${projectId}/semantic-search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, type, top_k: topK })
+    });
+    return response.json();
   }
 };
 

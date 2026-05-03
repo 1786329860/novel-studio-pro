@@ -128,11 +128,50 @@ class MemoryAgent(BaseAgent):
         return data
 
     # ------------------------------------------------------------------
+    # Embedding 语义搜索辅助
+    # ------------------------------------------------------------------
+
+    def _semantic_search_chapters(
+        self, project: dict[str, Any], query: str, top_k: int = 5
+    ) -> list[dict[str, Any]]:
+        """使用 Embedding 语义搜索找到最相关的章节。
+
+        如果 embedding_client 不可用或章节没有 embedding，返回空列表。
+        """
+        try:
+            from app.services.embedding_client import embedding_client
+        except ImportError:
+            return []
+
+        if not embedding_client.api_key:
+            return []
+
+        chapters = project.get("chapters", [])
+        if not chapters:
+            return []
+
+        docs = [
+            {
+                "id": ch.get("number", i),
+                "text": f"第{ch.get('number','')}章 {ch.get('title','')}\n{ch.get('content','')[:500]}",
+                "embedding": ch.get("embedding"),
+                "chapter": ch,
+            }
+            for i, ch in enumerate(chapters)
+        ]
+
+        results = embedding_client.search_similar(query, docs, top_k=top_k)
+        return results
+
+    # ------------------------------------------------------------------
     # Mock 模式
     # ------------------------------------------------------------------
 
     async def mock_run(self, context: dict[str, Any]) -> dict[str, Any]:
         """Mock 模式: 使用 ContextBuilder 的逻辑返回结果。
+
+        如果 embedding_client 可用，先用语义搜索找到最相关的章节，
+        然后只把相关章节的上下文传给 AI，而不是全部。
 
         Args:
             context: 上下文数据
@@ -145,16 +184,44 @@ class MemoryAgent(BaseAgent):
         current_chapter = len(chapters)
         memory = project.get("memory", {})
 
-        # 相关记忆: 最近章节摘要
+        # 尝试使用 Embedding 语义搜索找到最相关的章节
+        semantic_results = []
+        if chapters:
+            # 构建查询：使用当前任务描述和最近章节信息
+            task_desc = context.get("taskDescription", "生成下一章")
+            last_chapter = chapters[-1] if chapters else {}
+            query_parts = [task_desc]
+            if last_chapter.get("title"):
+                query_parts.append(f"第{last_chapter.get('number','')}章 {last_chapter.get('title','')}")
+            if last_chapter.get("content"):
+                query_parts.append(last_chapter["content"][:200])
+            query = " ".join(query_parts)
+
+            semantic_results = self._semantic_search_chapters(project, query, top_k=5)
+
+        # 相关记忆: 优先使用语义搜索结果，回退到最近章节摘要
         relevant_memories = []
-        summaries = memory.get("chapterSummaries", [])
-        for summary in summaries[-5:]:
-            relevant_memories.append({
-                "type": "chapter_summary",
-                "chapter": summary.get("chapter", 0),
-                "relevance": 0.7 + (summary.get("chapter", 0) - current_chapter + 5) * 0.06,
-                "content": summary.get("summary", ""),
-            })
+        if semantic_results:
+            # 使用语义搜索结果构建相关记忆
+            for result in semantic_results:
+                ch = result.get("chapter", {})
+                relevant_memories.append({
+                    "type": "chapter_summary",
+                    "chapter": ch.get("number", 0),
+                    "relevance": result.get("score", 0.7),
+                    "content": f"第{ch.get('number','')}章 {ch.get('title','')}: {ch.get('content','')[:300]}",
+                    "semantic_score": result.get("score", 0),
+                })
+        else:
+            # 回退：使用最近章节摘要
+            summaries = memory.get("chapterSummaries", [])
+            for summary in summaries[-5:]:
+                relevant_memories.append({
+                    "type": "chapter_summary",
+                    "chapter": summary.get("chapter", 0),
+                    "relevance": 0.7 + (summary.get("chapter", 0) - current_chapter + 5) * 0.06,
+                    "content": summary.get("summary", ""),
+                })
 
         # 相关伏笔: 高风险和近期需要处理的
         relevant_foreshadows = []

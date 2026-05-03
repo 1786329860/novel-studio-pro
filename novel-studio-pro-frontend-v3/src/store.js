@@ -43,7 +43,9 @@ const defaultSettings = {
   deepseekMainModel: 'deepseek-v4-flash',
   deepseekFastModel: 'deepseek-v4-flash',
   deepseekApiKeySet: false,
-  streaming: true
+  streaming: true,
+  siliconflowApiKey: '',
+  siliconflowBaseUrl: 'https://api.siliconflow.cn/v1'
 };
 
 const defaultState = {
@@ -114,6 +116,10 @@ export function getCurrentProject() {
   return state.projects.find((project) => project.id === state.currentProjectId) || null;
 }
 
+export function getSettings() {
+  return getState().settings;
+}
+
 export function updateProject(projectId, updater) {
   return updateState((state) => {
     state.projects = state.projects.map((project) => {
@@ -124,11 +130,22 @@ export function updateProject(projectId, updater) {
   });
 }
 
+export function updateProjectDirect(project) {
+  return updateState((state) => {
+    state.projects = state.projects.map((p) => (p.id === project.id ? project : p));
+    return state;
+  });
+}
+
 export function setActiveRoute(route) {
   return updateState((state) => {
     state.activeRoute = route;
     return state;
   });
+}
+
+export function getSettings() {
+  return getState().settings;
 }
 
 export function setSettings(partial) {

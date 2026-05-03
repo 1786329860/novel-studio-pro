@@ -5,9 +5,11 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import HTTPException
 from pydantic import BaseModel, Field
+from datetime import datetime
 
 from app.core.schemas import CreateProjectRequest, GenerateChapterRequest
 from app.services.project_service import project_service
@@ -339,3 +341,246 @@ async def cancel_task(task_id: str):
     if not success:
         return JSONResponse(status_code=400, content={"detail": "任务不存在或已完成，无法取消"})
     return {"taskId": task_id, "status": "cancelled", "message": "任务已取消"}
+
+
+# ======================================================================
+# 连接测试 & 系统诊断接口
+# ======================================================================
+
+@router.get("/api/test-connection")
+async def test_connection():
+    """测试后端与 DeepSeek 的连通性"""
+    from app.core.config import config
+    from app.services.deepseek_client import DeepSeekClient
+
+    if not config.use_deepseek:
+        return {"ok": False, "message": "DeepSeek 未启用（USE_DEEPSEEK=false）"}
+    if not config.deepseek_api_key:
+        return {"ok": False, "message": "API Key 未配置"}
+
+    client = DeepSeekClient()
+    try:
+        result = await client.chat(
+            messages=[{"role": "user", "content": "你好，请回复\"连接正常\""}],
+            max_tokens=20,
+            temperature=0.1
+        )
+        return {"ok": True, "message": "连接成功", "response": result[:50] if result else ""}
+    except Exception as e:
+        return {"ok": False, "message": f"连接失败: {str(e)[:200]}"}
+
+
+@router.post("/api/test-model")
+async def test_model(body: dict = Body(...)):
+    """测试指定模型的连通性"""
+    from app.core.config import config
+    from app.services.deepseek_client import DeepSeekClient
+
+    model = body.get("model", config.deepseek_main_model)
+    client = DeepSeekClient()
+    try:
+        result = await client.chat(
+            messages=[{"role": "user", "content": "测试"}],
+            max_tokens=10,
+            temperature=0.1,
+            model=model
+        )
+        return {"ok": True, "model": model, "message": "模型可用", "response": result[:50] if result else ""}
+    except Exception as e:
+        return {"ok": False, "model": model, "message": f"模型不可用: {str(e)[:200]}"}
+
+
+@router.get("/api/test-embedding")
+async def test_embedding():
+    """测试 Embedding 服务连通性"""
+    from app.services.embedding_client import embedding_client
+
+    if not embedding_client.api_key:
+        return {"ok": False, "message": "硅基流动 API Key 未配置"}
+
+    try:
+        vec = embedding_client.embed_query("测试文本")
+        dim = len(vec) if vec else 0
+        return {"ok": True, "message": "Embedding 服务正常", "dimension": dim, "model": embedding_client.model}
+    except Exception as e:
+        return {"ok": False, "message": f"Embedding 服务异常: {str(e)[:200]}"}
+
+
+@router.get("/api/request-logs")
+async def get_request_logs(limit: int = 50):
+    """获取最近的 API 请求日志"""
+    from app.core.storage import store
+    data = store.read()
+    logs = data.get("requestLogs", [])
+    return {"logs": logs[-limit:]}
+
+
+# ======================================================================
+# 导出接口
+# ======================================================================
+
+@router.get("/api/projects/{project_id}/export-characters")
+async def export_characters(project_id: str):
+    """导出项目角色表为 JSON"""
+    from app.core.storage import store
+    data = store.read()
+    project = data.get("projects", {}).get(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    characters = project.get("characters", [])
+    return {"characters": characters, "exported_at": datetime.now().isoformat()}
+
+
+@router.get("/api/projects/{project_id}/export-events")
+async def export_events(project_id: str):
+    """导出事件账本"""
+    from app.core.storage import store
+    data = store.read()
+    project = data.get("projects", {}).get(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    events = project.get("events", [])
+    return {"events": events, "total": len(events)}
+
+
+# ======================================================================
+# 语义搜索 & 记忆管理接口
+# ======================================================================
+
+@router.post("/api/projects/{project_id}/semantic-search")
+async def semantic_search(project_id: str, body: dict = Body(...)):
+    """语义搜索相关章节/事件"""
+    from app.core.storage import store
+    from app.services.embedding_client import embedding_client
+
+    query = body.get("query", "")
+    search_type = body.get("type", "chapters")  # chapters, events, foreshadows
+    top_k = body.get("top_k", 5)
+
+    data = store.read()
+    project = data.get("projects", {}).get(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    if search_type == "chapters":
+        docs = [
+            {"id": ch.get("number", i), "text": f"第{ch.get('number','')}章 {ch.get('title','')} {ch.get('content','')[:500]}", "embedding": ch.get("embedding")}
+            for i, ch in enumerate(project.get("chapters", []))
+        ]
+    elif search_type == "events":
+        docs = [
+            {"id": ev.get("id", i), "text": f"{ev.get('description','')} {ev.get('impact','')}", "embedding": ev.get("embedding")}
+            for i, ev in enumerate(project.get("events", []))
+        ]
+    elif search_type == "foreshadows":
+        docs = [
+            {"id": fs.get("id", i), "text": f"{fs.get('content','')} {fs.get('expectedPayoff','')}", "embedding": fs.get("embedding")}
+            for i, fs in enumerate(project.get("foreshadows", []))
+        ]
+    else:
+        docs = []
+
+    results = embedding_client.search_similar(query, docs, top_k=top_k)
+    return {"query": query, "type": search_type, "results": results}
+
+
+@router.post("/api/projects/{project_id}/rebuild-memory")
+async def rebuild_memory(project_id: str):
+    """重建全局记忆：为所有章节生成 Embedding 向量"""
+    from app.core.storage import store
+    from app.services.embedding_client import embedding_client
+
+    data = store.read()
+    project = data.get("projects", {}).get(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    if not embedding_client.api_key:
+        return {"ok": False, "message": "硅基流动 API Key 未配置，无法生成 Embedding"}
+
+    chapters = project.get("chapters", [])
+    if not chapters:
+        return {"ok": False, "message": "没有章节可以处理"}
+
+    # 收集需要生成 embedding 的章节
+    texts = []
+    indices = []
+    for i, ch in enumerate(chapters):
+        if not ch.get("embedding"):
+            text = f"第{ch.get('number','')}章 {ch.get('title','')}\n{ch.get('content','')[:1000]}"
+            texts.append(text)
+            indices.append(i)
+
+    if not texts:
+        return {"ok": True, "message": "所有章节已有 Embedding，无需重建", "processed": 0}
+
+    # 批量生成
+    try:
+        embeddings = embedding_client.embed_texts(texts)
+        for idx, emb in zip(indices, embeddings):
+            chapters[idx]["embedding"] = emb
+
+        # 保存
+        data["projects"][project_id]["chapters"] = chapters
+        store.write(data)
+
+        return {"ok": True, "message": f"已为 {len(embeddings)} 个章节生成 Embedding", "processed": len(embeddings)}
+    except Exception as e:
+        return {"ok": False, "message": f"生成失败: {str(e)[:200]}"}
+
+
+@router.post("/api/projects/{project_id}/compress-history")
+async def compress_history(project_id: str):
+    """压缩历史章节正文（保留摘要，删除完整正文以节省 token）"""
+    from app.core.storage import store
+
+    data = store.read()
+    project = data.get("projects", {}).get(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    chapters = project.get("chapters", [])
+    compressed_count = 0
+
+    for ch in chapters:
+        content = ch.get("content", "")
+        if content and len(content) > 200 and not ch.get("compressed"):
+            # 保留前200字作为摘要
+            ch["content"] = content[:200] + "\n\n[... 已压缩，原文 " + str(len(content)) + " 字 ...]"
+            ch["compressed"] = True
+            ch["original_length"] = len(content)
+            compressed_count += 1
+
+    if compressed_count > 0:
+        data["projects"][project_id]["chapters"] = chapters
+        store.write(data)
+
+    return {"ok": True, "compressed": compressed_count, "message": f"已压缩 {compressed_count} 个章节的正文"}
+
+
+@router.post("/api/projects/{project_id}/rebuild-ledger")
+async def rebuild_ledger(project_id: str):
+    """从所有章节中重建事件账本"""
+    from app.core.storage import store
+
+    data = store.read()
+    project = data.get("projects", {}).get(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    events = []
+    for ch in project.get("chapters", []):
+        state_delta = ch.get("stateDelta", {})
+        if state_delta:
+            for evt in state_delta.get("new_events", state_delta.get("newEvents", [])):
+                events.append({
+                    "id": f"ch{ch.get('number','?')}-{len(events)}",
+                    "chapter": ch.get("number", "?"),
+                    "description": evt if isinstance(evt, str) else evt.get("description", str(evt)),
+                    "type": "plot"
+                })
+
+    data["projects"][project_id]["events"] = events
+    store.write(data)
+
+    return {"ok": True, "rebuilt": len(events), "message": f"已从章节中重建 {len(events)} 条事件"}
