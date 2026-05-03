@@ -584,3 +584,239 @@ async def rebuild_ledger(project_id: str):
     store.write(data)
 
     return {"ok": True, "rebuilt": len(events), "message": f"已从章节中重建 {len(events)} 条事件"}
+
+
+# ======================================================================
+# AI 伏笔管理接口
+# ======================================================================
+
+@router.post("/{project_id}/organize-foreshadows")
+async def organize_foreshadows(project_id: str):
+    """AI 驱动的伏笔状态整理。
+
+    分析每个伏笔的当前章节、最后提及章节、计划回收章节等信息，
+    由 AI 建议状态更新（planted → developing → ready_to_payoff → paid_off）
+    并更新风险评分。
+    """
+    from app.core.config import config
+    from app.core.storage import store
+    from app.services.deepseek_client import DeepSeekClient
+
+    data = store.read()
+    project = data.get("projects", {}).get(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    foreshadows = project.get("foreshadows", [])
+    if not foreshadows:
+        return {"projectId": project_id, "foreshadows": [], "message": "暂无伏笔需要整理"}
+
+    current_chapter = len(project.get("chapters", []))
+
+    # 构建伏笔摘要供 AI 分析
+    foreshadows_summary = []
+    for fs in foreshadows:
+        foreshadows_summary.append({
+            "id": fs.get("id", ""),
+            "content": fs.get("content", "")[:200],
+            "status": fs.get("status", "planted"),
+            "plantedChapter": fs.get("plantedChapter"),
+            "lastMentionedChapter": fs.get("lastMentionedChapter"),
+            "plannedPayoffChapter": fs.get("plannedPayoffChapter"),
+            "riskScore": fs.get("riskScore"),
+        })
+
+    prompt = f"""你是一位专业的小说编辑助手，负责管理小说中的伏笔线索。
+
+当前小说进度：第 {current_chapter} 章
+
+以下是所有伏笔的当前状态：
+{json.dumps(foreshadows_summary, ensure_ascii=False, indent=2)}
+
+请分析每个伏笔，根据以下规则更新状态：
+- planted（已埋设）：伏笔刚出现，尚未被再次提及
+- developing（发展中）：伏笔已被提及或暗示过至少一次，但尚未到回收时机
+- ready_to_payoff（待回收）：已到或接近计划回收章节，应尽快安排回收
+- paid_off（已回收）：伏笔已完成回收
+
+同时评估每个伏笔的风险评分（0-100）：
+- 风险高（>70）：距离计划回收章节很近但状态仍为 planted/developing，或已超过计划回收章节
+- 风险中（30-70）：需要关注但尚有时间
+- 风险低（<30）：状态正常
+
+请返回 JSON 格式，包含更新后的伏笔列表，每个伏笔包含：
+- id: 伏笔ID
+- suggestedStatus: 建议的新状态
+- riskScore: 风险评分（0-100）
+- reason: 状态变更理由（简短说明）
+
+返回格式：
+{{"updated_foreshadows": [{{"id": "...", "suggestedStatus": "...", "riskScore": 0, "reason": "..."}}, ...]}}"""
+
+    client = DeepSeekClient()
+    try:
+        result = await client.chat_json(
+            messages=[{"role": "user", "content": prompt}],
+            model=config.deepseek_plan_model,
+            temperature=0.3,
+            max_tokens=4000,
+            task_name="organize_foreshadows",
+        )
+    except Exception as e:
+        logger.error("[organize-foreshadows] AI 调用失败: %s", e)
+        raise HTTPException(status_code=500, detail=f"AI 分析失败: {str(e)[:200]}")
+
+    updated_list = result.get("updated_foreshadows", [])
+
+    # 将 AI 建议写回伏笔数据
+    updated_map = {item["id"]: item for item in updated_list}
+    for fs in foreshadows:
+        if fs.get("id") in updated_map:
+            suggestion = updated_map[fs["id"]]
+            fs["status"] = suggestion.get("suggestedStatus", fs.get("status", "planted"))
+            fs["riskScore"] = suggestion.get("riskScore", fs.get("riskScore", 0))
+            fs["statusReason"] = suggestion.get("reason", "")
+
+    # 保存更新
+    data["projects"][project_id]["foreshadows"] = foreshadows
+    store.write(data)
+
+    return {
+        "projectId": project_id,
+        "foreshadows": foreshadows,
+        "updatedCount": len(updated_list),
+    }
+
+
+@router.post("/{project_id}/generate-payoff-plan")
+async def generate_payoff_plan(project_id: str):
+    """AI 驱动的伏笔回收计划生成。
+
+    根据当前伏笔状态和章节进度，生成详细的回收时间表，
+    包括每个伏笔应在哪一章回收以及简要的回收方式描述。
+    """
+    from app.core.config import config
+    from app.core.storage import store
+    from app.services.deepseek_client import DeepSeekClient
+
+    data = store.read()
+    project = data.get("projects", {}).get(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    foreshadows = project.get("foreshadows", [])
+    current_chapter = len(project.get("chapters", []))
+
+    # 只关注未回收的伏笔
+    active_foreshadows = [
+        fs for fs in foreshadows
+        if fs.get("status") != "paid_off"
+    ]
+
+    if not active_foreshadows:
+        return {
+            "projectId": project_id,
+            "currentChapter": current_chapter,
+            "payoffPlan": [],
+            "message": "所有伏笔已回收，无需生成计划",
+        }
+
+    # 构建伏笔摘要
+    foreshadows_summary = []
+    for fs in active_foreshadows:
+        foreshadows_summary.append({
+            "id": fs.get("id", ""),
+            "content": fs.get("content", "")[:200],
+            "status": fs.get("status", "planted"),
+            "plantedChapter": fs.get("plantedChapter"),
+            "lastMentionedChapter": fs.get("lastMentionedChapter"),
+            "plannedPayoffChapter": fs.get("plannedPayoffChapter"),
+            "riskScore": fs.get("riskScore"),
+        })
+
+    prompt = f"""你是一位专业的小说编辑助手，负责规划伏笔回收时间表。
+
+当前小说进度：第 {current_chapter} 章
+
+以下是所有待回收的伏笔：
+{json.dumps(foreshadows_summary, ensure_ascii=False, indent=2)}
+
+请根据伏笔的重要程度、风险评分和故事节奏，生成一个合理的回收计划：
+1. 高风险伏笔应优先安排回收
+2. 回收应分散在不同章节，避免同一章回收过多伏笔
+3. 考虑故事节奏，重要伏笔应在关键情节节点回收
+4. 建议从第 {current_chapter + 1} 章开始规划
+
+请返回 JSON 格式的回收计划：
+{{
+  "payoff_plan": [
+    {{
+      "foreshadowId": "伏笔ID",
+      "scheduledChapter": 建议回收的章节号,
+      "priority": "high/medium/low",
+      "payoffDescription": "简要描述回收方式和场景",
+      "reasoning": "为什么安排在这一章回收"
+    }},
+    ...
+  ]
+}}
+
+注意：scheduledChapter 必须大于当前章节号 {current_chapter}。"""
+
+    client = DeepSeekClient()
+    try:
+        result = await client.chat_json(
+            messages=[{"role": "user", "content": prompt}],
+            model=config.deepseek_plan_model,
+            temperature=0.3,
+            max_tokens=4000,
+            task_name="generate_payoff_plan",
+        )
+    except Exception as e:
+        logger.error("[generate-payoff-plan] AI 调用失败: %s", e)
+        raise HTTPException(status_code=500, detail=f"AI 生成失败: {str(e)[:200]}")
+
+    payoff_plan = result.get("payoff_plan", [])
+
+    return {
+        "projectId": project_id,
+        "currentChapter": current_chapter,
+        "payoffPlan": payoff_plan,
+        "totalForeshadows": len(active_foreshadows),
+        "plannedCount": len(payoff_plan),
+    }
+
+
+@router.put("/{project_id}/volumes")
+async def update_volumes(project_id: str, body: dict = Body(...)):
+    """更新项目的卷结构。
+
+    接收新的卷数组，替换 storyBible.volumePlan。
+    """
+    from app.core.storage import store
+
+    volumes = body.get("volumes")
+    if volumes is None:
+        raise HTTPException(status_code=400, detail="请求体缺少 volumes 字段")
+
+    if not isinstance(volumes, list):
+        raise HTTPException(status_code=400, detail="volumes 必须是数组")
+
+    data = store.read()
+    project = data.get("projects", {}).get(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    # 确保 storyBible 存在
+    if not project.get("storyBible"):
+        project["storyBible"] = {}
+
+    project["storyBible"]["volumePlan"] = volumes
+    data["projects"][project_id] = project
+    store.write(data)
+
+    return {
+        "projectId": project_id,
+        "volumes": volumes,
+        "message": "卷结构已更新",
+    }

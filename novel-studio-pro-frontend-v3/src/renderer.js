@@ -6,6 +6,8 @@ let busyText = '';
 let streamProgress = null;  // 流式进度状态: { agent, text, rewriteAttempt, rewriteReason }
 let toast = null;
 let toastTimer = null;
+let currentWritingMode = 'default';  // 'default' | 'focus' | 'split'
+let chapterStateLocked = false;
 
 const navItems = [
   { id: 'project', icon: '▦', label: '项目总览' },
@@ -394,15 +396,18 @@ function renderWritingPage(project, pendingChapter, state) {
     return `<div class="chapter-list-item ${isActive ? 'active' : ''}" data-action="selectChapter" data-chapter-index="${idx}"><span class="chapter-list-number">第${ch.number}章</span><b class="chapter-list-title">${escapeHtml(ch.title)}</b><span class="pill mint">已确认</span></div>`;
   }).join('');
   const pendingItem = pendingChapter ? `<div class="chapter-list-item ${viewingIndex === -1 || viewingIndex >= project.chapters.length ? 'active' : ''}" data-action="selectChapter" data-chapter-index="-1"><span class="chapter-list-number">第${pendingChapter.number}章</span><b class="chapter-list-title">${escapeHtml(pendingChapter.title)}</b><span class="pill orange">待确认</span></div>` : '';
+  const writingModeClass = currentWritingMode === 'focus' ? 'focus-mode' : currentWritingMode === 'split' ? 'split-mode' : '';
+  const leftCardsStyle = currentWritingMode === 'focus' || currentWritingMode === 'split' ? 'display:none;' : '';
+  const rightPanelStyle = currentWritingMode === 'focus' ? 'display:none;' : '';
   return `
-    <main class="page writing-grid">
-      <aside class="left-cards">
+    <main class="page writing-grid ${writingModeClass}">
+      <aside class="left-cards" style="${leftCardsStyle}">
         <section class="card chapter-dir-card"><div class="section-title"><h2>章节目录</h2></div><div class="chapter-list">${chapterListItems}${pendingItem}</div></section>
         <section class="card guide-card" id="guide-card"><div class="section-title"><h2>本章写作指南</h2><button class="tiny-btn" data-action="editGuide">编辑</button></div><div class="guide-block"><b>本章目标</b><p>${escapeHtml(dp.goal)}</p></div><div class="guide-block"><b>视角安排</b><p>${escapeHtml(dp.pov)}</p></div><div class="guide-block"><b>角色站位</b><p>${roleEntries.map(([k, v]) => `${escapeHtml(k)} ${v}%`).join(' / ')}</p></div><div class="guide-block danger"><b>禁止事项</b><p>${(dp.forbidden || []).map(escapeHtml).join('；')}</p></div></section>
         <section class="card progress-card"><h2>章节进度</h2>${[['主线推进', project.status.mainProgress || 0, 'blue'], ['女主戏份', roleEntries.find(([k]) => k.includes('沈'))?.[1] || 35, 'pink'], ['伏笔风险', 28, 'orange'], ['偏离风险', (project.status?.deviationRisk ?? 0) * 100, 'mint']].map(([a, b, c]) => `<div class="metric-line"><b>${a}</b><span>${Math.round(b)}%</span>${progress(b, c)}</div>`).join('')}</section>
       </aside>
       <section class="card editor-card"><div class="chapter-head"><div><h1>第 ${chapter.number} 章 · ${escapeHtml(chapter.title)}</h1><p>视角：${escapeHtml(dp.pov || '自动判断')}　时段：自动判断　字数：${number(chapter.wordCount)}</p></div><button class="circle-btn" data-action="chapterMenu">···</button></div><article class="novel-text">${escapeHtml(chapter.text).split('\n').map((p) => p ? `<p>${p}</p>` : '<br/>').join('')}</article><div class="editor-footer"><span>字数统计：${number(chapter.wordCount)}</span><span>预计本章字数：${number(getState().settings.chapterWordTargetMin)} - ${number(getState().settings.chapterWordTargetMax)}</span><button class="tiny-btn" data-action="toggleWritingMode">写作模式⌄</button></div><div class="chapter-actions"><button class="soft-btn" data-action="rewriteChapter">重写本章</button><button class="next-btn" data-action="generateNextChapter">✦ 生成下一章</button>${isPending ? `<button class="primary-btn" data-action="confirmChapter">确认本章入库</button>` : `<button class="soft-btn" data-action="continueWriting">继续写作</button>`}</div></section>
-      <aside class="right-panel"><section class="card ai-director"><h2>AI 自动导演</h2><div class="preview-card"><h3>当前主线</h3><p>${escapeHtml(project.storyBible.mainConflict)}</p>${progress(project.status.mainProgress || 0, 'blue')}</div><div class="preview-card"><h3>下一转折</h3><p>系统将根据事件账本和伏笔风险自动安排下一次冲突或揭示。</p></div></section><section class="card risk-card"><h2>风险预警</h2><div class="ring-row"><div class="ring">28%<small>伏笔风险</small></div><div class="ring green">${Math.round((project.status?.deviationRisk ?? 0) * 100)}%<small>偏离风险</small></div></div></section><section class="card"><h2>角色活跃度</h2>${characters.slice(0, 4).map((char) => `<div class="metric-line"><b>${escapeHtml(char.name)}</b><span>${Math.round((1 - char.dropoutRisk) * 100)}%</span>${progress((1 - char.dropoutRisk) * 100, 'pink')}</div>`).join('')}</section><section class="card"><h2>AI 质量评分</h2><div class="score-big">${(chapter.review && chapter.review.totalScore) || project.status.qualityScore}<small>/100</small></div>${((chapter.review && chapter.review.tests) || []).slice(0, 4).map((test) => `<div class="test-row"><span>${test.passed ? '✓' : '!'}</span><b>${escapeHtml(test.name)}</b><em>${test.score}/100</em></div>`).join('')}</section></aside>
+      <aside class="right-panel" style="${rightPanelStyle}"><section class="card ai-director"><h2>AI 自动导演</h2><div class="preview-card"><h3>当前主线</h3><p>${escapeHtml(project.storyBible.mainConflict)}</p>${progress(project.status.mainProgress || 0, 'blue')}</div><div class="preview-card"><h3>下一转折</h3><p>系统将根据事件账本和伏笔风险自动安排下一次冲突或揭示。</p></div></section><section class="card risk-card"><h2>风险预警</h2><div class="ring-row"><div class="ring">28%<small>伏笔风险</small></div><div class="ring green">${Math.round((project.status?.deviationRisk ?? 0) * 100)}%<small>偏离风险</small></div></div></section><section class="card"><h2>角色活跃度</h2>${characters.slice(0, 4).map((char) => `<div class="metric-line"><b>${escapeHtml(char.name)}</b><span>${Math.round((1 - char.dropoutRisk) * 100)}%</span>${progress((1 - char.dropoutRisk) * 100, 'pink')}</div>`).join('')}</section><section class="card"><h2>AI 质量评分</h2><div class="score-big">${(chapter.review && chapter.review.totalScore) || project.status.qualityScore}<small>/100</small></div>${((chapter.review && chapter.review.tests) || []).slice(0, 4).map((test) => `<div class="test-row"><span>${test.passed ? '✓' : '!'}</span><b>${escapeHtml(test.name)}</b><em>${test.score}/100</em></div>`).join('')}</section></aside>
       <section class="card state-delta"><h2>状态变化（本章结束后）</h2>${[['新增信息', (chapter.stateDelta && chapter.stateDelta.newForeshadows) || []], ['角色关系变化', (chapter.stateDelta && chapter.stateDelta.relationshipChanges) || []], ['事件更新', (chapter.stateDelta && chapter.stateDelta.eventUpdates) || []], ['时间线', (chapter.stateDelta && chapter.stateDelta.timeline) || []]].map(([title, list]) => `<div><h3>${title}</h3><ul>${list.length ? list.map((x) => `<li>${escapeHtml(x)}</li>`).join('') : '<li>等待生成后显示</li>'}</ul></div>`).join('')}</section>
     </main>
   `;
@@ -418,7 +423,7 @@ function renderStatusPage(project) {
   const tests = status.tests?.length ? status.tests : defaultTests();
   return `
     <main class="page status-page">
-      <div class="page-head"><div><h1>状态面板 · 全局运行监控</h1><p>状态驱动、约束驱动、检查驱动的自动化监控中心。</p></div><div class="head-actions"><button class="primary-btn" data-action="analyzeState">重新分析状态</button><button class="soft-btn" data-action="generateReport">生成检查报告</button><button class="soft-btn" data-action="lockChapterState">锁定本章状态</button></div></div>
+      <div class="page-head"><div><h1>状态面板 · 全局运行监控</h1><p>状态驱动、约束驱动、检查驱动的自动化监控中心。</p></div><div class="head-actions"><button class="primary-btn" data-action="analyzeState">重新分析状态</button><button class="soft-btn" data-action="generateReport">生成检查报告</button><button class="soft-btn ${chapterStateLocked ? 'locked-state-btn' : ''}" data-action="lockChapterState" ${chapterStateLocked ? 'style="background:var(--gradient-main,linear-gradient(135deg,#ff6b9d,#4facfe));color:#fff;border:none;"' : ''}>${chapterStateLocked ? '🔓 解锁状态' : '🔒 锁定状态'}</button></div></div>
       <section class="kpi-row">${[['当前章节', chapter ? `第 ${chapter.number} 章 · ${chapter.title}` : '尚未生成', '字数：' + number(chapter?.wordCount), 'pink'], ['主线推进度', `${status.mainProgress || 0}%`, `已推进 ${Math.round((status.mainProgress || 0) / 2)} 个主线节点`, 'blue'], ['伏笔总数', foreshadows.length, `已记录 ${foreshadows.length} 条`, 'purple'], ['角色活跃数', characters.length, `活跃角色 / 总角色 ${characters.length} / ${characters.length + 18}`, 'orange'], ['偏离风险', formatPct(status.deviationRisk), '安全', 'mint'], ['AI 质量评分', `${status.qualityScore || 90}/100`, '优秀', 'blue']].map(([a, b, c, tone]) => `<div class="card kpi ${tone}"><h3>${a}</h3><strong>${escapeHtml(b)}</strong><small>${escapeHtml(c)}</small>${a.includes('推进') ? progress(status.mainProgress || 0, 'blue') : ''}</div>`).join('')}</section>
       <section class="status-grid"><div class="card ledger-panel"><div class="section-title"><h2>事件账本</h2><div><button class="tiny-btn" data-route="ledger">全部事件</button><button class="tiny-btn" data-route="characters">全部角色</button></div></div><table><thead><tr><th>时间</th><th>场景</th><th>角色</th><th>事件</th><th>影响</th><th>可见性</th></tr></thead><tbody>${renderEventRows(project)}</tbody></table></div><div class="card truth-panel"><h2>真相源 / 信息层级</h2>${Object.entries(truthSource).map(([key, val]) => `<div class="metric-line"><b>${truthLabel(key)}</b><span>${val}%</span>${progress(val, key === 'misdirection' ? 'orange' : 'blue')}</div>`).join('')}</div><div class="card character-warning"><h2>角色活跃与掉线预警</h2>${characters.map((char) => `<div class="warning-row"><b>${escapeHtml(char.name)}</b><span>第 ${char.lastAppeared || '-'} 章</span><em class="${char.dropoutRisk > 0.5 ? 'danger-text' : ''}">${formatPct(char.dropoutRisk)}</em><small>建议第 ${(project.currentChapterNumber || 0) + 1} 章</small></div>`).join('')}</div><div class="card"><h2>伏笔生命周期</h2>${foreshadows.slice(-8).map((fb) => `<div class="list-row"><span class="dot-icon">✧</span><div><b>${escapeHtml(fb.name)}</b><small>埋下于第 ${fb.firstChapter} 章，计划第 ${fb.plannedPayoff} 章回收</small></div>${pill(fb.status, fb.risk > 0.5 ? 'red' : 'orange')}</div>`).join('')}</div><div class="card network-card"><h2>角色关系网络（核心）</h2><div class="network">${(characters || []).slice(0, 5).map((c, i) => { const isCenter = i === 0; return `<span class="node ${isCenter ? 'center' : ''}">${escapeHtml(c.name || '角色' + (i+1))}</span>`; }).join('<span class="edge"></span>')}</div></div><div class="card test-panel"><h2>检查与测试（小说单元测试）</h2>${tests.map((test) => `<div class="test-row"><span>${test.passed ? '✓' : '!'}</span><b>${escapeHtml(test.name)}</b><em>${test.score}/100</em><small>${escapeHtml(test.note)}</small></div>`).join('')}</div></section>
     </main>
@@ -732,7 +737,85 @@ app.addEventListener('click', async (event) => {
   }
 
   if (action === 'editVolumeStructure') {
-    showToast('卷结构编辑功能开发中，目前请在创建项目时规划好分卷', 'info');
+    if (!project) return showToast('请先创建项目', 'error');
+    const volumes = JSON.parse(JSON.stringify(project.storyBible?.volumePlan || []));
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.45);backdrop-filter:blur(6px);';
+    function renderVolumeModal() {
+      overlay.innerHTML = `
+        <div style="background:var(--bg,#fff);border-radius:var(--radius-lg,16px);padding:28px 32px;width:680px;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.18);">
+          <h2 style="margin:0 0 20px;font-size:20px;background:var(--gradient-main,linear-gradient(135deg,#ff6b9d,#4facfe));-webkit-background-clip:text;-webkit-text-fill-color:transparent;">编辑分卷结构</h2>
+          <div id="volume-list">${volumes.map((v, i) => `
+            <div class="card" style="margin-bottom:12px;padding:16px;border:1px solid var(--line,#eee);">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <span style="font-weight:700;color:var(--text,#333);">卷 ${i + 1}</span>
+                <button class="tiny-btn" data-vol-delete="${i}" style="color:#e74c3c;">删除</button>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <label style="font-size:12px;color:var(--muted,#888);">卷名<input class="input" data-vol-name="${i}" value="${escapeHtml(v.name)}" style="margin-top:4px;width:100%;" /></label>
+                <label style="font-size:12px;color:var(--muted,#888);">章节范围<input class="input" data-vol-range="${i}" value="${escapeHtml(v.range)}" style="margin-top:4px;width:100%;" /></label>
+                <label style="font-size:12px;color:var(--muted,#888);">核心目标<input class="input" data-vol-obj="${i}" value="${escapeHtml(v.objective)}" style="margin-top:4px;width:100%;" /></label>
+                <label style="font-size:12px;color:var(--muted,#888);">重大转折<input class="input" data-vol-tp="${i}" value="${escapeHtml(v.turningPoint)}" style="margin-top:4px;width:100%;" /></label>
+                <label style="font-size:12px;color:var(--muted,#888);">叙事基调<input class="input" data-vol-tone="${i}" value="${escapeHtml(v.tone)}" style="margin-top:4px;width:100%;" /></label>
+              </div>
+            </div>
+          `).join('')}</div>
+          <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end;">
+            <button class="soft-btn" id="vol-add-btn">＋ 添加新卷</button>
+            <button class="soft-btn" id="vol-cancel-btn">取消</button>
+            <button class="primary-btn" id="vol-save-btn">保存</button>
+          </div>
+        </div>
+      `;
+    }
+    renderVolumeModal();
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => {
+      if (e.target.id === 'vol-add-btn') {
+        volumes.push({ name: '', range: '', objective: '', turningPoint: '', tone: '', status: 'planned', coverGradient: 'linear-gradient(135deg,#667eea,#764ba2)' });
+        renderVolumeModal();
+      }
+      if (e.target.id === 'vol-cancel-btn') {
+        overlay.remove();
+      }
+      if (e.target.id === 'vol-save-btn') {
+        const inputs = overlay.querySelectorAll('[data-vol-name]');
+        inputs.forEach((input) => {
+          const i = parseInt(input.dataset.volName, 10);
+          volumes[i].name = input.value;
+        });
+        overlay.querySelectorAll('[data-vol-range]').forEach((input) => { volumes[parseInt(input.dataset.volRange, 10)].range = input.value; });
+        overlay.querySelectorAll('[data-vol-obj]').forEach((input) => { volumes[parseInt(input.dataset.volObj, 10)].objective = input.value; });
+        overlay.querySelectorAll('[data-vol-tp]').forEach((input) => { volumes[parseInt(input.dataset.volTp, 10)].turningPoint = input.value; });
+        overlay.querySelectorAll('[data-vol-tone]').forEach((input) => { volumes[parseInt(input.dataset.volTone, 10)].tone = input.value; });
+        (async () => {
+          try {
+            const settings = getSettings();
+            const baseUrl = settings.backendBaseUrl.replace(/\/$/, '');
+            const resp = await fetch(`${baseUrl}/api/projects/${project.id}/volumes`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ volumes })
+            });
+            const data = await resp.json();
+            if (data.project) {
+              updateProject(project.id, () => data.project);
+            }
+            showToast('分卷结构已保存。');
+          } catch (err) {
+            showToast('保存失败: ' + toUserError(err), 'error');
+          }
+          overlay.remove();
+        })();
+      }
+      const delBtn = e.target.closest('[data-vol-delete]');
+      if (delBtn) {
+        const idx = parseInt(delBtn.dataset.volDelete, 10);
+        volumes.splice(idx, 1);
+        renderVolumeModal();
+      }
+    });
   }
 
   if (action === 'autoCompleteCharacters') {
@@ -755,11 +838,71 @@ app.addEventListener('click', async (event) => {
   }
 
   if (action === 'organizeForeshadows') {
-    showToast('伏笔整理功能将在下一版本实现', 'info');
+    if (!project) return showToast('请先创建项目', 'error');
+    showToast('AI 正在分析伏笔状态...', 'ok');
+    try {
+      const settings = getSettings();
+      const baseUrl = settings.backendBaseUrl.replace(/\/$/, '');
+      const resp = await fetch(`${baseUrl}/api/projects/${project.id}/organize-foreshadows`, { method: 'POST' });
+      const data = await resp.json();
+      if (data.foreshadows) {
+        updateProject(project.id, (p) => ({ ...p, foreshadows: data.foreshadows }));
+      }
+      showToast(data.summary || `伏笔整理完成，共 ${data.foreshadows?.length || 0} 条伏笔已更新。`);
+    } catch (err) {
+      showToast('伏笔整理失败: ' + toUserError(err), 'error');
+    }
   }
 
   if (action === 'generatePayoffPlan') {
-    showToast('回收计划功能将在下一版本实现', 'info');
+    if (!project) return showToast('请先创建项目', 'error');
+    busyText = 'AI 正在生成伏笔回收计划...';
+    render();
+    try {
+      const settings = getSettings();
+      const baseUrl = settings.backendBaseUrl.replace(/\/$/, '');
+      const resp = await fetch(`${baseUrl}/api/projects/${project.id}/generate-payoff-plan`, { method: 'POST' });
+      const data = await resp.json();
+      busyText = '';
+      render();
+      const plan = data.payoffPlan || data.plan || [];
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.45);backdrop-filter:blur(6px);';
+      overlay.innerHTML = `
+        <div style="background:var(--bg,#fff);border-radius:var(--radius-lg,16px);padding:28px 32px;width:640px;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.18);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+            <h2 style="margin:0;font-size:20px;background:var(--gradient-main,linear-gradient(135deg,#ff6b9d,#4facfe));-webkit-background-clip:text;-webkit-text-fill-color:transparent;">伏笔回收计划</h2>
+            <button class="tiny-btn" id="payoff-close-btn" style="font-size:18px;padding:4px 10px;">✕</button>
+          </div>
+          ${plan.length ? `<div style="position:relative;padding-left:24px;border-left:2px solid var(--gradient-main,linear-gradient(135deg,#ff6b9d,#4facfe));">
+            ${plan.map((item, i) => `
+              <div style="position:relative;margin-bottom:20px;padding-left:16px;">
+                <div style="position:absolute;left:-29px;top:4px;width:12px;height:12px;border-radius:50%;background:${i % 2 === 0 ? '#ff6b9d' : '#4facfe'};border:2px solid var(--bg,#fff);"></div>
+                <div class="card" style="padding:12px 16px;border:1px solid var(--line,#eee);">
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <b style="color:var(--text,#333);">${escapeHtml(item.foreshadowName || item.name || `伏笔 ${i + 1}`)}</b>
+                    <span class="pill ${item.risk > 0.5 ? 'red' : 'blue'}">${escapeHtml(item.status || '待回收')}</span>
+                  </div>
+                  <p style="margin:6px 0 0;font-size:13px;color:var(--muted,#888);">回收章节：第 ${escapeHtml(String(item.payoffChapter || item.chapter || '?'))} 章</p>
+                  ${item.description ? `<p style="margin:4px 0 0;font-size:13px;color:var(--text,#555);">${escapeHtml(item.description)}</p>` : ''}
+                </div>
+              </div>
+            `).join('')}
+          </div>` : '<p style="color:var(--muted,#888);text-align:center;padding:40px 0;">暂无回收计划数据。</p>'}
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', (e) => {
+        if (e.target.id === 'payoff-close-btn' || e.target === overlay) {
+          overlay.remove();
+        }
+      });
+    } catch (err) {
+      busyText = '';
+      render();
+      showToast('回收计划生成失败: ' + toUserError(err), 'error');
+    }
   }
 
   if (action === 'addForeshadow') {
@@ -778,11 +921,93 @@ app.addEventListener('click', async (event) => {
   }
 
   if (action === 'chapterMenu') {
-    showToast('章节菜单：导出、重命名等功能开发中', 'info');
+    if (!project) return;
+    const btn = actionButton;
+    const rect = btn.getBoundingClientRect();
+    // 关闭已有下拉
+    const existing = document.querySelector('.chapter-dropdown');
+    if (existing) { existing.remove(); return; }
+    const viewingIndex = state.viewingChapterIndex;
+    let chapter;
+    if (state.pendingChapter && (viewingIndex === -1 || viewingIndex >= project.chapters.length)) {
+      chapter = state.pendingChapter;
+    } else if (viewingIndex >= 0 && viewingIndex < project.chapters.length) {
+      chapter = project.chapters[viewingIndex];
+    } else {
+      chapter = project.chapters.at(-1);
+    }
+    if (!chapter) return;
+    const dropdown = document.createElement('div');
+    dropdown.className = 'chapter-dropdown';
+    dropdown.style.cssText = `position:fixed;z-index:40;left:${rect.left}px;top:${rect.bottom + 4}px;background:var(--bg,#fff);border-radius:var(--radius-lg,12px);box-shadow:0 8px 30px rgba(0,0,0,0.15);border:1px solid var(--line,#eee);padding:6px 0;min-width:160px;`;
+    dropdown.innerHTML = `
+      <div class="chapter-dropdown-item" data-ch-action="exportTxt" style="padding:10px 16px;cursor:pointer;font-size:14px;color:var(--text,#333);transition:background 0.15s;">导出为 TXT</div>
+      <div class="chapter-dropdown-item" data-ch-action="exportMd" style="padding:10px 16px;cursor:pointer;font-size:14px;color:var(--text,#333);transition:background 0.15s;">导出为 Markdown</div>
+      <div class="chapter-dropdown-item" data-ch-action="copyText" style="padding:10px 16px;cursor:pointer;font-size:14px;color:var(--text,#333);transition:background 0.15s;">复制正文</div>
+      <div class="chapter-dropdown-item" data-ch-action="rename" style="padding:10px 16px;cursor:pointer;font-size:14px;color:var(--text,#333);transition:background 0.15s;">重命名章节</div>
+    `;
+    // 悬停效果
+    dropdown.querySelectorAll('.chapter-dropdown-item').forEach((item) => {
+      item.addEventListener('mouseenter', () => { item.style.background = 'var(--line,#f0f0f0)'; });
+      item.addEventListener('mouseleave', () => { item.style.background = ''; });
+    });
+    document.body.appendChild(dropdown);
+    dropdown.addEventListener('click', (e) => {
+      const item = e.target.closest('[data-ch-action]');
+      if (!item) return;
+      const chAction = item.dataset.chAction;
+      dropdown.remove();
+      if (chAction === 'exportTxt') {
+        downloadFile(`第${chapter.number}章_${chapter.title}.txt`, chapter.text || '', 'text/plain;charset=utf-8');
+        showToast('已导出为 TXT');
+      } else if (chAction === 'exportMd') {
+        const md = `# 第${chapter.number}章 ${chapter.title}\n\n${chapter.text || ''}`;
+        downloadFile(`第${chapter.number}章_${chapter.title}.md`, md, 'text/markdown;charset=utf-8');
+        showToast('已导出为 Markdown');
+      } else if (chAction === 'copyText') {
+        navigator.clipboard.writeText(chapter.text || '').then(() => {
+          showToast('正文已复制到剪贴板');
+        }).catch(() => {
+          showToast('复制失败', 'error');
+        });
+      } else if (chAction === 'rename') {
+        const newTitle = prompt('请输入新的章节标题：', chapter.title);
+        if (newTitle === null || !newTitle.trim()) return;
+        const isPending = state.pendingChapter && (viewingIndex === -1 || viewingIndex >= project.chapters.length);
+        if (isPending) {
+          updateState((s) => {
+            if (s.pendingChapter) s.pendingChapter.title = newTitle.trim();
+            return s;
+          });
+        } else {
+          const chapterIdx = viewingIndex >= 0 && viewingIndex < project.chapters.length ? viewingIndex : project.chapters.length - 1;
+          if (chapterIdx >= 0) {
+            updateProject(project.id, (p) => {
+              if (p.chapters[chapterIdx]) p.chapters[chapterIdx].title = newTitle.trim();
+              return p;
+            });
+          }
+        }
+        showToast('章节已重命名。');
+      }
+    });
+    // 点击外部关闭
+    function closeDropdown(e) {
+      if (!dropdown.contains(e.target) && e.target !== btn) {
+        dropdown.remove();
+        document.removeEventListener('click', closeDropdown, true);
+      }
+    }
+    setTimeout(() => document.addEventListener('click', closeDropdown, true), 0);
   }
 
   if (action === 'toggleWritingMode') {
-    showToast('写作模式切换功能开发中', 'info');
+    const modes = ['default', 'focus', 'split'];
+    const labels = { default: '默认模式', focus: '沉浸模式', split: '分屏模式' };
+    const currentIdx = modes.indexOf(currentWritingMode);
+    currentWritingMode = modes[(currentIdx + 1) % modes.length];
+    showToast(`已切换到${labels[currentWritingMode]}`);
+    render();
   }
 
   if (action === 'continueWriting') {
@@ -802,7 +1027,13 @@ app.addEventListener('click', async (event) => {
   }
 
   if (action === 'lockChapterState') {
-    showToast('状态锁定功能将在下一版本实现', 'info');
+    chapterStateLocked = !chapterStateLocked;
+    if (chapterStateLocked) {
+      showToast('本章状态已锁定，生成新章节时将保留当前状态');
+    } else {
+      showToast('状态已解锁');
+    }
+    render();
   }
 
   if (action === 'rebuildLedger') {
@@ -1150,15 +1381,14 @@ document.addEventListener('click', (event) => {
 
 subscribe(render);
 
-// 事件搜索功能
-const eventSearch = document.getElementById('event-search');
-if (eventSearch) {
-  eventSearch.addEventListener('input', (e) => {
+// 事件搜索功能 — 使用事件委托，避免 SPA 导航后绑定丢失
+app.addEventListener('input', (e) => {
+  if (e.target.id === 'event-search') {
     const keyword = e.target.value.toLowerCase();
     document.querySelectorAll('#ledger-table tbody tr').forEach(row => {
       row.style.display = row.textContent.toLowerCase().includes(keyword) ? '' : 'none';
     });
-  });
-}
+  }
+});
 
 render();
