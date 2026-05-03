@@ -1,4 +1,4 @@
-import { getState } from './store.js';
+import { getState, updateState } from './store.js';
 import { mockApi } from './mock.js';
 
 function getSettings() {
@@ -54,29 +54,60 @@ async function callWithFallback(mockFn, remoteFn) {
   throw lastError;
 }
 
+function upsertProject(project) {
+  updateState((state) => {
+    const exists = state.projects.some((item) => item.id === project.id);
+    state.projects = exists
+      ? state.projects.map((item) => (item.id === project.id ? project : item))
+      : [project, ...state.projects];
+    state.currentProjectId = project.id;
+    return state;
+  });
+}
+
 export const api = {
-  createProject(payload) {
+  async createProject(payload) {
     return callWithFallback(
       () => mockApi.createProject(payload),
-      () => request('/api/projects', { method: 'POST', body: payload })
+      async () => {
+        const data = await request('/api/projects', { method: 'POST', body: payload });
+        if (data.project) {
+          updateState((state) => {
+            state.projects = [data.project, ...state.projects.filter((item) => item.id !== data.project.id)];
+            state.currentProjectId = data.project.id;
+            state.activeRoute = 'blueprint';
+            state.pendingChapter = null;
+            return state;
+          });
+        }
+        return data;
+      }
     );
   },
 
-  buildProject(projectId) {
+  async buildProject(projectId) {
     return callWithFallback(
       () => mockApi.buildProject(projectId),
-      () => request(`/api/projects/${projectId}/build`, { method: 'POST' })
+      async () => {
+        const data = await request(`/api/projects/${projectId}/build`, { method: 'POST' });
+        if (data.project) upsertProject(data.project);
+        return data;
+      }
     );
   },
 
-  regenerateBlueprint(projectId) {
+  async regenerateBlueprint(projectId) {
     return callWithFallback(
       () => mockApi.regenerateBlueprint(projectId),
-      () => request(`/api/projects/${projectId}/blueprint/regenerate`, { method: 'POST' })
+      async () => {
+        const data = await request(`/api/projects/${projectId}/blueprint/regenerate`, { method: 'POST' });
+        if (data.project) upsertProject(data.project);
+        return data;
+      }
     );
   },
 
-  generateNextChapter(projectId, options = {}) {
+  async generateNextChapter(projectId, options = {}) {
     const settings = getSettings();
     const body = {
       mode: options.mode || settings.generationMode,
@@ -87,19 +118,64 @@ export const api = {
     };
     return callWithFallback(
       () => mockApi.generateNextChapter(projectId, body),
-      () => request(`/api/projects/${projectId}/chapters/generate-next`, { method: 'POST', body })
+      async () => {
+        const data = await request(`/api/projects/${projectId}/chapters/generate-next`, { method: 'POST', body });
+        if (data.chapter) {
+          updateState((state) => {
+            state.pendingChapter = data.chapter;
+            state.lastJob = {
+              type: 'generate_next_chapter',
+              status: 'done',
+              projectId,
+              finishedAt: new Date().toISOString(),
+              mode: body.mode
+            };
+            state.activeRoute = 'writing';
+            return state;
+          });
+        }
+        return data;
+      }
     );
   },
 
   /**
    * 流式生成下一章（SSE）。
-   * @param {string} projectId - 项目 ID
-   * @param {object} options - 生成选项
-   * @param {function} onEvent - 事件回调，参数为解析后的 JSON 对象
-   * @returns {Promise<object>} 最终章节数据
+   * Mock 模式下直接调用 mock 并模拟事件回调。
+   * 远程模式下使用 SSE 流式接收。
    */
   async generateNextChapterStream(projectId, options = {}, onEvent = () => {}) {
     const settings = getSettings();
+
+    // Mock 模式：直接调用 mock 并模拟事件
+    if (settings.mockMode) {
+      onEvent({ type: 'agent_start', agent: 'MemoryAgent' });
+      await new Promise((r) => setTimeout(r, 300));
+      onEvent({ type: 'agent_done', agent: 'MemoryAgent' });
+
+      onEvent({ type: 'agent_start', agent: 'ConstraintAgent' });
+      await new Promise((r) => setTimeout(r, 200));
+      onEvent({ type: 'agent_done', agent: 'ConstraintAgent' });
+
+      onEvent({ type: 'agent_start', agent: 'DirectorAgent' });
+      await new Promise((r) => setTimeout(r, 300));
+      onEvent({ type: 'agent_done', agent: 'DirectorAgent' });
+
+      onEvent({ type: 'agent_start', agent: 'WriterAgent' });
+      const result = await mockApi.generateNextChapter(projectId, {});
+      onEvent({ type: 'agent_done', agent: 'WriterAgent' });
+
+      onEvent({ type: 'agent_start', agent: 'ReviewAgent' });
+      await new Promise((r) => setTimeout(r, 200));
+      onEvent({ type: 'agent_done', agent: 'ReviewAgent' });
+
+      if (result && result.chapter) {
+        onEvent({ type: 'chapter_done', chapter: result.chapter });
+      }
+      return result ? result.chapter : null;
+    }
+
+    // 远程模式：SSE 流式
     const baseUrl = settings.backendBaseUrl.replace(/\/$/, '');
     const url = `${baseUrl}/api/projects/${projectId}/chapters/generate-next`;
     const body = {
@@ -160,17 +236,108 @@ export const api = {
     return finalChapter;
   },
 
-  confirmChapter(projectId, chapterId) {
+  /**
+   * 提交章节生成任务（任务队列模式）
+   */
+  async submitGenerateTask(projectId, options = {}) {
+    const settings = getSettings();
+    const body = {
+      mode: options.mode || settings.generationMode,
+      qualityThreshold: settings.qualityThreshold,
+      maxInputTokens: settings.maxInputTokens,
+      maxOutputTokens: settings.maxOutputTokens,
+      userInstruction: options.userInstruction || ''
+    };
     return callWithFallback(
-      () => mockApi.confirmChapter(projectId, chapterId),
-      () => request(`/api/projects/${projectId}/chapters/${chapterId}/confirm`, { method: 'POST' })
+      () => mockApi.generateNextChapter(projectId, body),
+      async () => {
+        const data = await request(`/api/projects/${projectId}/chapters/generate-next`, { method: 'POST', body });
+        if (data.taskId) {
+          updateState((state) => {
+            state.currentTaskId = data.taskId;
+            state.lastJob = {
+              type: 'generate_next_chapter',
+              status: 'pending',
+              projectId,
+              taskId: data.taskId,
+              startedAt: new Date().toISOString(),
+              mode: body.mode
+            };
+            return state;
+          });
+        }
+        if (data.chapter) {
+          updateState((state) => {
+            state.pendingChapter = data.chapter;
+            state.lastJob = {
+              type: 'generate_next_chapter',
+              status: 'done',
+              projectId,
+              finishedAt: new Date().toISOString(),
+              mode: body.mode
+            };
+            state.activeRoute = 'writing';
+            return state;
+          });
+        }
+        return data;
+      }
     );
   },
 
-  analyzeState(projectId) {
+  /**
+   * 获取任务状态和进度
+   */
+  async getTaskStatus(taskId) {
+    return request(`/api/projects/tasks/${taskId}`);
+  },
+
+  /**
+   * 列出所有任务
+   */
+  async listTasks() {
+    return request('/api/projects/tasks');
+  },
+
+  /**
+   * 取消任务
+   */
+  async cancelTask(taskId) {
+    return request(`/api/projects/tasks/${taskId}/cancel`, { method: 'POST' });
+  },
+
+  /**
+   * 分析用户对章节正文的修改
+   */
+  async analyzeEdit(projectId, chapterId, originalText, modifiedText) {
+    return request(`/api/projects/${projectId}/chapters/${chapterId}/analyze-edit`, {
+      method: 'POST',
+      body: { originalText, modifiedText }
+    });
+  },
+
+  async confirmChapter(projectId, chapterId) {
+    return callWithFallback(
+      () => mockApi.confirmChapter(projectId, chapterId),
+      async () => {
+        const data = await request(`/api/projects/${projectId}/chapters/${chapterId}/confirm`, { method: 'POST' });
+        if (data.project) {
+          updateState((state) => {
+            state.projects = state.projects.map((project) => (project.id === data.project.id ? data.project : project));
+            state.currentProjectId = data.project.id;
+            state.pendingChapter = null;
+            return state;
+          });
+        }
+        return data;
+      }
+    );
+  },
+
+  async analyzeState(projectId) {
     return callWithFallback(
       () => mockApi.analyzeState(projectId),
-      () => request(`/api/projects/${projectId}/state/analyze`, { method: 'POST' })
+      async () => request(`/api/projects/${projectId}/state/analyze`, { method: 'POST' })
     );
   }
 };
