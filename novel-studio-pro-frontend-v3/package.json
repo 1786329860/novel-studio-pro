@@ -10,7 +10,7 @@
     "dev": "electron .",
     "start": "electron .",
     "dist": "electron-builder --win nsis",
-    "check": "node --check main.js && node --check preload.js"
+    "check": "node --check main.js && node --check preload.js && node --check tools/start_backend.js"
   },
   "dependencies": {},
   "devDependencies": {
@@ -27,8 +27,27 @@
       "main.js",
       "preload.js",
       "index.html",
+      "loading.html",
       "src/**/*",
+      "tools/**/*",
+      "resources/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../novel-studio-pro-backend-v1",
+        "to": "backend",
+        "filter": [
+          "**/*",
+          "!__pycache__/**",
+          "!**/*.pyc",
+          "!data/**",
+          "!frontend_patch/**",
+          "!*.md",
+          "!*.service",
+          "!run_backend.bat"
+        ]
+      }
     ],
     "win": {
       "target": "nsis"
@@ -36,6 +55,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    }
+    },
+    "afterPack": "./tools/after_pack.js"
   }
 }

@@ -44,6 +44,10 @@ class AppConfig:
     max_input_tokens: int = _int(os.getenv("MAX_INPUT_TOKENS"), 64000)
     max_output_tokens: int = _int(os.getenv("MAX_OUTPUT_TOKENS"), 12000)
 
+    # SQLite 数据库配置
+    use_sqlite: bool = _bool(os.getenv("USE_SQLITE"), True)
+    database_url: str = os.getenv("DATABASE_URL", "data/novel_studio.db")
+
 
 config = AppConfig()
 config.data_dir.mkdir(parents=True, exist_ok=True)

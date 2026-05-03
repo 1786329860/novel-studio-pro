@@ -141,6 +141,61 @@ class ProjectService:
         chapter["confirmedAt"] = now_iso()
         delta = chapter.get("stateDelta", {})
 
+        # ============================================================
+        # 任务 1: 用户修改回灌
+        # 检查 pendingChapter 的 text 是否与生成时的原始 text 不同
+        # 如果不同，调用 analyze_user_edit() 获取新的 state_delta
+        # ============================================================
+        original_text = chapter.get("_originalText", "")
+        current_text = chapter.get("text", "")
+        if original_text and current_text and original_text != current_text:
+            logger.info(
+                "[confirm_chapter] 检测到正文被修改，重新提取状态变化"
+            )
+            try:
+                import asyncio
+                from app.services.user_edit_analyzer import analyze_user_edit
+
+                # 在同步方法中运行异步函数
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 如果已经在事件循环中，使用 nest_asyncio 或创建新线程
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        edit_result = pool.submit(
+                            asyncio.run,
+                            analyze_user_edit(original_text, current_text, project)
+                        ).result(timeout=30)
+                else:
+                    edit_result = loop.run_until_complete(
+                        analyze_user_edit(original_text, current_text, project)
+                    )
+
+                if edit_result and edit_result.get("action") != "skip":
+                    new_delta = edit_result.get("state_delta", {})
+                    if new_delta:
+                        # 使用 StateMerger 验证新的 state_delta
+                        try:
+                            from app.services.agents import StateMerger
+                            merger = StateMerger()
+                            _, _ = merger.validate_and_merge(project, new_delta)
+                            # 合并新的 delta 到原有 delta
+                            delta = _merge_deltas(delta, new_delta)
+                            chapter["stateDelta"] = delta
+                            chapter["_userEditAnalysis"] = edit_result
+                            logger.info(
+                                "[confirm_chapter] 用户修改状态变化已合并"
+                            )
+                        except Exception as exc:
+                            logger.warning(
+                                "[confirm_chapter] 新 state_delta 验证失败，使用原始 delta: %s",
+                                exc,
+                            )
+            except Exception as exc:
+                logger.warning(
+                    "[confirm_chapter] 用户修改分析失败，使用原始 delta: %s", exc
+                )
+
         def mut(data: dict[str, Any]) -> dict[str, Any]:
             current = data["projects"][project_id]
             pending = current.setdefault("pendingChapters", {})
@@ -504,3 +559,90 @@ def _apply_memory_update(
 
 
 project_service = ProjectService()
+
+
+# ======================================================================
+# 任务 1: 用户修改回灌 - delta 合并辅助函数
+# ======================================================================
+
+def _merge_deltas(
+    original_delta: dict[str, Any],
+    new_delta: dict[str, Any],
+) -> dict[str, Any]:
+    """合并两个 state_delta，新 delta 的内容优先。
+
+    对于列表类型的字段，将新 delta 的项追加到原有列表中（去重）。
+    对于标量字段，新 delta 覆盖原有值。
+
+    Args:
+        original_delta: 原始 state_delta
+        new_delta: 新的 state_delta
+
+    Returns:
+        合并后的 state_delta
+    """
+    merged = dict(original_delta)
+
+    # 列表类型字段: 追加并去重
+    list_fields = [
+        "character_changes",
+        "relationship_changes",
+        "foreshadow_changes",
+        "new_events",
+        "timeline_updates",
+        "knowledge_updates",
+        "eventUpdates",
+        "newForeshadows",
+    ]
+
+    for field in list_fields:
+        original_list = merged.get(field, [])
+        new_list = new_delta.get(field, [])
+
+        if not new_list:
+            continue
+
+        if not original_list:
+            merged[field] = new_list
+            continue
+
+        # 去重追加
+        existing_keys = set()
+        for item in original_list:
+            if isinstance(item, dict):
+                key = item.get("id") or item.get("character_id") or item.get("description", "")
+                existing_keys.add(key)
+            elif isinstance(item, str):
+                existing_keys.add(item)
+
+        for item in new_list:
+            if isinstance(item, dict):
+                key = item.get("id") or item.get("character_id") or item.get("description", "")
+                if key not in existing_keys:
+                    original_list.append(item)
+                    existing_keys.add(key)
+            elif isinstance(item, str):
+                if item not in existing_keys:
+                    original_list.append(item)
+                    existing_keys.add(item)
+
+        merged[field] = original_list
+
+    # 标量字段: 新值覆盖
+    scalar_fields = ["main_progress_delta"]
+    for field in scalar_fields:
+        if field in new_delta:
+            merged[field] = new_delta[field]
+
+    # relationshipChanges 特殊处理（旧格式）
+    if "relationshipChanges" in new_delta:
+        original_rel = merged.get("relationshipChanges", [])
+        new_rel = new_delta["relationshipChanges"]
+        if isinstance(new_rel, list):
+            merged["relationshipChanges"] = original_rel + [
+                r for r in new_rel if r not in original_rel
+            ]
+        else:
+            merged["relationshipChanges"] = new_rel
+
+    return merged

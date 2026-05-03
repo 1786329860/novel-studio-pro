@@ -3,6 +3,7 @@
 所有 Agent 的抽象基类，定义了统一的执行接口和通用能力：
 - name / description: Agent 身份标识
 - run(context): 执行入口，自动判断 Mock/真实 AI 模式
+- run_stream(context): 流式执行入口，默认调用 run() 后一次性 yield
 - build_messages(context): 子类实现，构建 Prompt
 - parse_response(content): 子类实现，解析 AI 返回
 - mock_run(context): 子类实现，Mock 模式下的逻辑
@@ -18,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from app.services.deepseek_client import deepseek_client
@@ -120,6 +122,18 @@ class BaseAgent(ABC):
             except Exception:
                 return self._fallback_mock(context)
 
+    async def run_stream(self, context: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]:
+        """流式执行 Agent 任务。
+
+        默认实现：调用 run() 后一次性 yield 完整结果。
+        子类（如 WriterAgent）可覆盖实现真正的流式输出。
+
+        Yields:
+            dict，格式为 {"type": "progress", "text": "..."} 或 {"type": "result", "data": {...}}
+        """
+        result = await self.run(context)
+        yield {"type": "result", "data": result}
+
     # ------------------------------------------------------------------
     # AI 调用
     # ------------------------------------------------------------------
@@ -127,7 +141,8 @@ class BaseAgent(ABC):
     async def _ai_run(self, context: dict[str, Any]) -> dict[str, Any]:
         """使用 DeepSeek AI 执行任务。
 
-        构建 messages -> 发送请求 -> 解析响应。
+        构建 messages -> 发送请求 -> 解析响应 -> Schema 校验。
+        校验失败时自动尝试修复，修复后仍失败则回退 Mock。
         """
         messages = self.build_messages(context)
 
@@ -144,7 +159,56 @@ class BaseAgent(ABC):
             task_name=self.name,
         )
 
-        return self.parse_response(content)
+        result = self.parse_response(content)
+
+        # Schema 校验
+        from app.core.schema_validator import (
+            validate_agent_output,
+            try_fix_agent_output,
+        )
+
+        is_valid, errors = validate_agent_output(self.name, result)
+        if is_valid:
+            logger.info("[AI] %s 执行成功，Schema 校验通过", self.name)
+            return result
+
+        # 校验失败，尝试自动修复
+        logger.warning(
+            "[Schema] %s 输出校验失败，尝试自动修复: %s",
+            self.name,
+            "; ".join(errors),
+        )
+        fixed_result, fix_success, fix_log = try_fix_agent_output(self.name, result)
+
+        if fix_success:
+            # 修复后重新校验
+            is_valid_after_fix, fix_errors = validate_agent_output(
+                self.name, fixed_result
+            )
+            if is_valid_after_fix:
+                logger.info(
+                    "[Schema] %s 自动修复成功: %s",
+                    self.name,
+                    "; ".join(fix_log),
+                )
+                return fixed_result
+            else:
+                logger.warning(
+                    "[Schema] %s 修复后仍不合法: %s，回退 Mock",
+                    self.name,
+                    "; ".join(fix_errors),
+                )
+        else:
+            logger.warning(
+                "[Schema] %s 无法自动修复，回退 Mock",
+                self.name,
+            )
+
+        # 修复失败，回退 Mock
+        try:
+            return await self.mock_run(context)
+        except Exception:
+            return self._fallback_mock(context)
 
     # ------------------------------------------------------------------
     # 子类必须实现的抽象方法

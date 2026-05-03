@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from app.core.utils import make_id, now_iso, truncate_text
@@ -21,6 +22,9 @@ from app.services.agents import (
     StateExtractorAgent,
     StateMerger,
     ContextBuilder,
+    MemoryAgent,
+    CharacterDirectorAgent,
+    ForeshadowAgent,
 )
 
 logger = logging.getLogger(__name__)
@@ -411,7 +415,7 @@ async def _agent_pipeline_chapter(
     project: dict[str, Any],
     options: dict[str, Any],
 ) -> dict[str, Any] | None:
-    """使用多 Agent 流水线生成章节。
+    """使用多 Agent 流水线生成章节（含自动重写循环）。
 
     流程:
         1. ConstraintAgent   - 约束生成
@@ -421,31 +425,137 @@ async def _agent_pipeline_chapter(
         5. StateExtractorAgent - 状态提取
         6. StateMerger       - 状态合并验证
 
+    自动重写:
+        如果质量评分低于阈值，自动使用 review 建议重新生成。
+
     Returns:
         完整的章节数据，失败返回 None。
     """
+    # 读取重写配置
+    generation = settings_service.get_all(safe=False).get("generation", {})
+    max_rewrites = int(generation.get("autoRewriteTimes", 2))
+    quality_threshold = int(generation.get("qualityThreshold", 75))
+
+    chapter = None
+    rewrite_options = dict(options)
+
+    for attempt in range(max_rewrites + 1):
+        chapter = await _run_full_pipeline(project, rewrite_options)
+
+        if chapter is None:
+            break
+
+        # 检查质量评分
+        review = chapter.get("review", {})
+        total_score = int(review.get("total_score", review.get("totalScore", 100)))
+
+        if total_score >= quality_threshold or attempt >= max_rewrites:
+            break
+
+        # 质量不达标，准备重写
+        suggestions = review.get("rewrite_suggestions", "")
+        if not suggestions:
+            # 从测试项中提取失败项作为建议
+            failed_tests = [
+                t for t in review.get("tests", [])
+                if not t.get("passed", True)
+            ]
+            suggestions = "；".join(
+                f"{t.get('name', '')}: {t.get('message', '')}" for t in failed_tests
+            )
+
+        logger.info(
+            "[Pipeline] 质量评分 %d 低于阈值 %d，第 %d 次重写",
+            total_score, quality_threshold, attempt + 1,
+        )
+
+        rewrite_options = dict(rewrite_options)
+        rewrite_options["userInstruction"] = (
+            f"上次质量评分 {total_score}，需要改进：{suggestions}"
+        )
+
+    return chapter
+
+
+async def _run_full_pipeline(
+    project: dict[str, Any],
+    options: dict[str, Any],
+) -> dict[str, Any] | None:
+    """执行完整的 Agent 流水线（单次，不含重写循环）。
+
+    流水线步骤:
+        1. MemoryAgent          - 检索相关记忆
+        2. ForeshadowAgent      - 规划伏笔处理
+        3. ConstraintAgent      - 生成约束（使用 ForeshadowAgent 的输出）
+        4. CharacterDirectorAgent - 规划角色戏份
+        5. DirectorAgent        - 生成导演稿（使用 CharacterDirectorAgent 的输出）
+        6. WriterAgent          - 写正文
+        7. ReviewAgent          - 质量检查
+        8. StateExtractorAgent  - 提取状态
+        9. StateMerger          - 合并状态
+    """
     context_builder = ContextBuilder()
 
-    # 步骤 1: 约束生成
-    logger.info("[Pipeline] 步骤 1/6: 约束生成...")
+    # 步骤 1: 记忆检索
+    logger.info("[Pipeline] 步骤 1/9: 记忆检索...")
+    memory_ctx = context_builder.build_constraint_context(project)
+    memory_ctx["project"] = project
+    memory_ctx["taskDescription"] = "生成下一章"
+    memory_result = await MemoryAgent().run(memory_ctx)
+
+    # 步骤 2: 伏笔规划
+    logger.info("[Pipeline] 步骤 2/9: 伏笔规划...")
+    foreshadow_ctx = context_builder.build_constraint_context(project)
+    foreshadow_ctx["project"] = project
+    foreshadow_result = await ForeshadowAgent().run(foreshadow_ctx)
+
+    # 步骤 3: 约束生成（使用伏笔规划结果）
+    logger.info("[Pipeline] 步骤 3/9: 约束生成...")
     constraint_ctx = context_builder.build_constraint_context(project)
     constraint_ctx["project"] = project
+    constraint_ctx["foreshadow_plan"] = foreshadow_result.get("foreshadow_plan", [])
     constraints = await ConstraintAgent().run(constraint_ctx)
 
-    # 步骤 2: 导演稿生成
-    logger.info("[Pipeline] 步骤 2/6: 导演稿生成...")
+    # 步骤 4: 角色戏份规划
+    logger.info("[Pipeline] 步骤 4/9: 角色戏份规划...")
+    char_director_ctx = context_builder.build_director_context(project, constraints)
+    char_director_ctx["project"] = project
+    char_director_ctx["constraints"] = constraints
+    char_plan = await CharacterDirectorAgent().run(char_director_ctx)
+
+    # 步骤 5: 导演稿生成（使用角色规划结果）
+    logger.info("[Pipeline] 步骤 5/9: 导演稿生成...")
     director_ctx = context_builder.build_director_context(project, constraints)
     director_ctx["project"] = project
+    director_ctx["character_plan"] = char_plan.get("character_plan", {})
     director_plan = await DirectorAgent().run(director_ctx)
 
-    # 步骤 3: 正文写作
-    logger.info("[Pipeline] 步骤 3/6: 正文写作...")
+    # 步骤 6: 正文写作
+    logger.info("[Pipeline] 步骤 6/9: 正文写作...")
     writer_ctx = context_builder.build_writer_context(project, constraints, director_plan)
     writer_ctx["project"] = project
-    chapter_text = await WriterAgent().run(writer_ctx)
 
-    # 步骤 4: 质量检查
-    logger.info("[Pipeline] 步骤 4/6: 质量检查...")
+    # 分场景生成判断：如果导演稿有 3+ 个场景，使用分场景生成
+    scenes = director_plan.get("scenes", [])
+    if len(scenes) >= 3:
+        logger.info(
+            "[Pipeline] 检测到 %d 个场景，启用分场景生成模式",
+            len(scenes),
+        )
+        writer_agent = WriterAgent()
+        chapter_text = await writer_agent.write_by_scene(
+            writer_ctx, scenes, target_total_words=5000
+        )
+    else:
+        # 1-2 个场景，使用整章生成（原有逻辑）
+        logger.info(
+            "[Pipeline] 检测到 %d 个场景，使用整章生成模式",
+            len(scenes),
+        )
+        chapter_text = await WriterAgent().run(writer_ctx)
+
+    # 步骤 7: 质量检查
+    logger.info("[Pipeline] 步骤 7/9: 质量检查...")
     # 构建一个临时 chapter 对象供 ReviewAgent 使用
     temp_chapter = {
         "text": chapter_text.get("text", ""),
@@ -458,14 +568,14 @@ async def _agent_pipeline_chapter(
     review_ctx = context_builder.build_review_context(project, temp_chapter)
     review = await ReviewAgent().run(review_ctx)
 
-    # 步骤 5: 状态提取
-    logger.info("[Pipeline] 步骤 5/6: 状态提取...")
+    # 步骤 8: 状态提取
+    logger.info("[Pipeline] 步骤 8/9: 状态提取...")
     state_extract_ctx = context_builder.build_state_extract_context(project, temp_chapter)
     state_extract_ctx["project"] = project
     state_result = await StateExtractorAgent().run(state_extract_ctx)
 
-    # 步骤 6: 状态合并验证
-    logger.info("[Pipeline] 步骤 6/6: 状态合并验证...")
+    # 步骤 9: 状态合并验证
+    logger.info("[Pipeline] 步骤 9/9: 状态合并验证...")
     state_delta = state_result.get("state_delta", {})
     merger = StateMerger()
     merged, preview = merger.validate_and_merge(project, state_delta)
@@ -494,6 +604,12 @@ async def _agent_pipeline_chapter(
         "stateDelta": state_delta,
         "statePreview": preview,
         "constraints": constraints,
+        # 保存原始正文用于后续修改检测
+        "_originalText": chapter_text.get("text", ""),
+        # 附加新 Agent 的输出
+        "memoryResult": memory_result,
+        "foreshadowPlan": foreshadow_result,
+        "characterPlan": char_plan,
         "createdAt": now_iso(),
     }
 
@@ -532,6 +648,210 @@ async def generate_next_chapter(
 
     # 最终降级: Mock 模式
     return build_mock_chapter(project, options)
+
+
+async def generate_next_chapter_stream(
+    project_id: str,
+    options: dict[str, Any],
+) -> AsyncGenerator[dict[str, Any], None]:
+    """流式生成下一章（SSE 事件流）。
+
+    生成的事件类型:
+        - {"type": "agent_start", "agent": "constraint"} - Agent 开始执行
+        - {"type": "agent_progress", "agent": "writer", "text": "..."} - Agent 进度
+        - {"type": "agent_done", "agent": "review", "result": {...}} - Agent 完成
+        - {"type": "rewrite", "attempt": 2, "reason": "质量评分72低于阈值75"} - 重写事件
+        - {"type": "chapter_done", "chapter": {...}} - 章节生成完成
+        - {"type": "error", "message": "..."} - 错误
+
+    Yields:
+        SSE 事件 dict
+    """
+    from app.services.project_service import project_service
+
+    try:
+        project = project_service.get_project(project_id)
+
+        # 若项目没有蓝图，自动先构建
+        if not project.get("storyBible"):
+            yield {"type": "agent_start", "agent": "blueprint"}
+            await project_service.build_project(project_id)
+            project = project_service.get_project(project_id)
+            yield {"type": "agent_done", "agent": "blueprint", "result": {"status": "ok"}}
+
+        # 读取重写配置
+        generation = settings_service.get_all(safe=False).get("generation", {})
+        max_rewrites = int(generation.get("autoRewriteTimes", 2))
+        quality_threshold = int(generation.get("qualityThreshold", 75))
+
+        chapter = None
+        rewrite_options = dict(options)
+
+        for attempt in range(max_rewrites + 1):
+            # 步骤 1: 约束生成
+            yield {"type": "agent_start", "agent": "constraint"}
+            context_builder = ContextBuilder()
+            constraint_ctx = context_builder.build_constraint_context(project)
+            constraint_ctx["project"] = project
+            constraints = await ConstraintAgent().run(constraint_ctx)
+            yield {"type": "agent_done", "agent": "constraint", "result": constraints}
+
+            # 步骤 2: 导演稿生成
+            yield {"type": "agent_start", "agent": "director"}
+            director_ctx = context_builder.build_director_context(project, constraints)
+            director_ctx["project"] = project
+            director_plan = await DirectorAgent().run(director_ctx)
+            yield {"type": "agent_done", "agent": "director", "result": director_plan}
+
+            # 步骤 3: 正文写作（流式）
+            yield {"type": "agent_start", "agent": "writer"}
+            writer_ctx = context_builder.build_writer_context(project, constraints, director_plan)
+            writer_ctx["project"] = project
+            chapter_text = None
+
+            # 分场景生成判断
+            stream_scenes = director_plan.get("scenes", [])
+            if len(stream_scenes) >= 3:
+                # 分场景流式生成
+                yield {
+                    "type": "agent_progress",
+                    "agent": "writer",
+                    "text": f"检测到 {len(stream_scenes)} 个场景，启用分场景生成模式...",
+                }
+                writer_agent = WriterAgent()
+                async for event in writer_agent.write_by_scene_stream(
+                    writer_ctx, stream_scenes, target_total_words=5000
+                ):
+                    if event.get("type") == "scene_start":
+                        yield {
+                            "type": "agent_progress",
+                            "agent": "writer",
+                            "text": f"[场景 {event.get('scene_number')}/{event.get('total_scenes')}] {event.get('scene_goal', '')}",
+                        }
+                    elif event.get("type") == "progress":
+                        yield {"type": "agent_progress", "agent": "writer", "text": event.get("text", "")}
+                    elif event.get("type") == "scene_done":
+                        yield {
+                            "type": "agent_progress",
+                            "agent": "writer",
+                            "text": f"[场景 {event.get('scene_number')} 完成, {event.get('word_count', 0)} 字]",
+                        }
+                    elif event.get("type") == "result":
+                        chapter_text = event.get("data", {})
+            else:
+                # 整章流式生成（原有逻辑）
+                async for event in WriterAgent().run_stream(writer_ctx):
+                    if event.get("type") == "progress":
+                        yield {"type": "agent_progress", "agent": "writer", "text": event.get("text", "")}
+                    elif event.get("type") == "result":
+                        chapter_text = event.get("data", {})
+            yield {"type": "agent_done", "agent": "writer", "result": chapter_text}
+
+            if not chapter_text:
+                break
+
+            # 步骤 4: 质量检查
+            yield {"type": "agent_start", "agent": "review"}
+            temp_chapter = {
+                "text": chapter_text.get("text", ""),
+                "title": director_plan.get("chapter_goal", ""),
+                "number": len(project.get("chapters", [])) + 1,
+                "wordCount": chapter_text.get("word_count", 0),
+                "directorPlan": director_plan,
+                "constraints": constraints,
+            }
+            review_ctx = context_builder.build_review_context(project, temp_chapter)
+            review = await ReviewAgent().run(review_ctx)
+            yield {"type": "agent_done", "agent": "review", "result": review}
+
+            # 步骤 5: 状态提取
+            yield {"type": "agent_start", "agent": "state_extractor"}
+            state_extract_ctx = context_builder.build_state_extract_context(project, temp_chapter)
+            state_extract_ctx["project"] = project
+            state_result = await StateExtractorAgent().run(state_extract_ctx)
+            yield {"type": "agent_done", "agent": "state_extractor", "result": state_result}
+
+            # 步骤 6: 状态合并验证
+            yield {"type": "agent_start", "agent": "state_merger"}
+            state_delta = state_result.get("state_delta", {})
+            merger = StateMerger()
+            merged, preview = merger.validate_and_merge(project, state_delta)
+            yield {"type": "agent_done", "agent": "state_merger", "result": {"status": "ok"}}
+
+            # 组装完整章节
+            chapters = project.get("chapters", [])
+            number = len(chapters) + 1
+            title = chapter_title(number)
+            if project.get("chapterTitlePreview"):
+                title = project["chapterTitlePreview"][number - 1].get("title", title)
+
+            chapter = {
+                "id": make_id("chapter"),
+                "number": number,
+                "title": title,
+                "status": "pending",
+                "wordCount": chapter_text.get("word_count", 0),
+                "directorPlan": director_plan,
+                "text": chapter_text.get("text", ""),
+                "review": review,
+                "stateDelta": state_delta,
+                "statePreview": preview,
+                "constraints": constraints,
+                "createdAt": now_iso(),
+            }
+
+            # 检查质量评分，决定是否重写
+            total_score = int(review.get("total_score", review.get("totalScore", 100)))
+
+            if total_score >= quality_threshold or attempt >= max_rewrites:
+                break
+
+            # 质量不达标，发送重写事件
+            suggestions = review.get("rewrite_suggestions", "")
+            if not suggestions:
+                failed_tests = [
+                    t for t in review.get("tests", [])
+                    if not t.get("passed", True)
+                ]
+                suggestions = "；".join(
+                    f"{t.get('name', '')}: {t.get('message', '')}" for t in failed_tests
+                )
+
+            reason = f"质量评分{total_score}低于阈值{quality_threshold}"
+            yield {
+                "type": "rewrite",
+                "attempt": attempt + 1,
+                "reason": reason,
+            }
+
+            logger.info(
+                "[Pipeline-Stream] 质量评分 %d 低于阈值 %d，第 %d 次重写",
+                total_score, quality_threshold, attempt + 1,
+            )
+
+            rewrite_options = dict(rewrite_options)
+            rewrite_options["userInstruction"] = (
+                f"上次质量评分 {total_score}，需要改进：{suggestions}"
+            )
+
+        if chapter:
+            # 保存到 pendingChapters
+            def mut(data: dict[str, Any]) -> dict[str, Any]:
+                current = data["projects"][project_id]
+                current.setdefault("pendingChapters", {})[chapter["id"]] = chapter
+                current["updatedAt"] = now_iso()
+                return chapter
+
+            from app.core.storage import store
+            store.update(mut)
+
+            yield {"type": "chapter_done", "chapter": chapter}
+        else:
+            yield {"type": "error", "message": "章节生成失败"}
+
+    except Exception as exc:
+        logger.error("[Pipeline-Stream] 流式生成错误: %s", exc)
+        yield {"type": "error", "message": str(exc)}
 
 
 # ======================================================================

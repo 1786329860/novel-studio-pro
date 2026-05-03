@@ -572,3 +572,121 @@ def build_state_extract_prompt(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
+
+
+# ======================================================================
+# 分场景写作 Prompt 模板
+# ======================================================================
+
+def build_scene_writing_prompt(
+    project: dict[str, Any],
+    scene: dict[str, Any],
+    previous_scene_text: str = "",
+    target_word_count: int = 1500,
+) -> list[dict[str, str]]:
+    """单场景写作 Prompt。
+
+    为分场景生成模式设计，每个场景独立调用 AI 生成正文。
+
+    角色: 小说自动化创作系统的【正文写作 Agent - 场景模式】
+    任务: 根据单个场景的导演稿，撰写该场景的正文段落。
+
+    Args:
+        project: 完整的项目数据
+        scene: 单个场景的导演稿（来自 DirectorAgent 的 scenes 列表中的某一项）
+        previous_scene_text: 前一个场景的正文结尾（用于衔接）
+        target_word_count: 本场景的目标字数
+
+    Returns:
+        消息列表
+    """
+    story_bible = project.get("storyBible", {})
+    chapters = project.get("chapters", [])
+
+    # 场景基本信息
+    scene_number = scene.get("number", 1)
+    scene_goal = scene.get("goal", "")
+    scene_conflict = scene.get("conflict", "")
+    scene_turning_point = scene.get("turning_point", "")
+    scene_hook = scene.get("hook", "")
+    scene_characters = scene.get("characters", [])
+    scene_location = scene.get("location", "")
+    scene_time = scene.get("time", "")
+    scene_mood = scene.get("mood", "")
+
+    # 出场角色的详细信息
+    character_details = []
+    all_characters = project.get("characters", [])
+    for char_name in scene_characters:
+        char_info = next(
+            (c for c in all_characters if c.get("name") == char_name),
+            None,
+        )
+        if char_info:
+            character_details.append({
+                "name": char_info.get("name", ""),
+                "role": char_info.get("role", ""),
+                "personality": char_info.get("personality", ""),
+                "emotion": char_info.get("emotion", ""),
+                "speakingStyle": "待推断",
+            })
+        else:
+            character_details.append({"name": char_name, "role": "未知", "personality": "", "emotion": ""})
+
+    context = {
+        "title": project.get("title", ""),
+        "genre": story_bible.get("genre", ""),
+        "styleProfile": story_bible.get("styleProfile", ""),
+        "mainTheme": story_bible.get("mainTheme", ""),
+        "scene": {
+            "number": scene_number,
+            "goal": scene_goal,
+            "conflict": scene_conflict,
+            "turning_point": scene_turning_point,
+            "hook": scene_hook,
+            "characters": scene_characters,
+            "location": scene_location,
+            "time": scene_time,
+            "mood": scene_mood,
+        },
+        "characterDetails": character_details,
+        "previousSceneTail": previous_scene_text[-300:] if previous_scene_text else "",
+        "lastChapterTail": chapters[-1].get("text", "")[-300:] if chapters else "",
+        "forbiddenRules": story_bible.get("forbiddenRules", []),
+        "targetWordCount": target_word_count,
+    }
+
+    system_prompt = (
+        "你是小说自动化创作系统的【正文写作 Agent - 场景模式】。\n\n"
+        "## 角色定位\n"
+        "你是一位文笔精湛的小说家，擅长将单个场景的导演稿转化为引人入胜的正文段落。\n\n"
+        "## 任务\n"
+        "根据以下场景导演稿，撰写该场景的正文。\n\n"
+        "## 输出格式\n"
+        "你必须输出严格 JSON，不要写任何解释文字。JSON 结构如下：\n"
+        "{\n"
+        '  "text": "场景正文内容",\n'
+        '  "word_count": 1500\n'
+        "}\n\n"
+        "## 写作规则\n"
+        "1. 严格按照场景目标、冲突、转折、钩子来写作\n"
+        "2. 角色对话要符合角色性格和当前情绪状态\n"
+        "3. 与前一场景的结尾自然衔接（如果提供了前文）\n"
+        "4. 场景开头要有环境描写或氛围铺垫\n"
+        "5. 场景结尾要有钩子（如果导演稿中指定了 hook）\n"
+        "6. 字数控制在目标范围内（允许上下浮动 20%）\n"
+        "7. 绝对避免 AI 味重的表达\n"
+        "8. 包含足够的感官细节和情绪描写\n"
+        "9. 不要在正文中直接解释伏笔，要自然融入叙事\n"
+        "10. 对话占比控制在 20%-40% 之间"
+    )
+
+    user_prompt = (
+        f"请根据以下场景导演稿，撰写第 {scene_number} 个场景的正文：\n\n"
+        f"{json.dumps(context, ensure_ascii=False, indent=2)}"
+    )
+
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]

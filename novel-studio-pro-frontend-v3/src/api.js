@@ -91,6 +91,75 @@ export const api = {
     );
   },
 
+  /**
+   * 流式生成下一章（SSE）。
+   * @param {string} projectId - 项目 ID
+   * @param {object} options - 生成选项
+   * @param {function} onEvent - 事件回调，参数为解析后的 JSON 对象
+   * @returns {Promise<object>} 最终章节数据
+   */
+  async generateNextChapterStream(projectId, options = {}, onEvent = () => {}) {
+    const settings = getSettings();
+    const baseUrl = settings.backendBaseUrl.replace(/\/$/, '');
+    const url = `${baseUrl}/api/projects/${projectId}/chapters/generate-next`;
+    const body = {
+      mode: options.mode || settings.generationMode,
+      qualityThreshold: settings.qualityThreshold,
+      maxInputTokens: settings.maxInputTokens,
+      maxOutputTokens: settings.maxOutputTokens,
+      userInstruction: options.userInstruction || ''
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream'
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : {};
+      throw new Error(data.detail || data.message || `HTTP ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalChapter = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        const dataStr = trimmed.slice(6);
+        if (!dataStr) continue;
+
+        try {
+          const event = JSON.parse(dataStr);
+          onEvent(event);
+
+          if (event.type === 'chapter_done') {
+            finalChapter = event.chapter;
+          }
+        } catch (e) {
+          // 忽略解析失败的行
+        }
+      }
+    }
+
+    return finalChapter;
+  },
+
   confirmChapter(projectId, chapterId) {
     return callWithFallback(
       () => mockApi.confirmChapter(projectId, chapterId),

@@ -1,8 +1,9 @@
 import { api, toUserError } from './api.js';
-import { getState, setActiveRoute, setSettings, resetDemoData, subscribe, setViewingChapterIndex, setCurrentProject, updateProject, updateState } from './store.js';
+import { getState, setActiveRoute, setSettings, resetDemoData, subscribe, setViewingChapterIndex, setCurrentProject, updateProject, updateState, setPendingChapter } from './store.js';
 
 const app = document.querySelector('#app');
 let busyText = '';
+let streamProgress = null;  // 流式进度状态: { agent, text, rewriteAttempt, rewriteReason }
 let toast = null;
 
 const navItems = [
@@ -577,11 +578,25 @@ function renderMain(state, project) {
 function render() {
   const state = getState();
   const project = getProject(state);
+
+  // 构建流式进度提示
+  let streamHtml = '';
+  if (streamProgress) {
+    const agentLabel = streamProgress.agent ? `当前 Agent: ${streamProgress.agent}` : '';
+    const textPreview = streamProgress.text ? `<p class="stream-text-preview">${escapeHtml(streamProgress.text.slice(-80))}</p>` : '';
+    const rewriteHtml = streamProgress.rewriteAttempt
+      ? `<p class="stream-rewrite">第 ${streamProgress.rewriteAttempt} 次重写中，原因：${escapeHtml(streamProgress.rewriteReason)}</p>`
+      : '';
+    streamHtml = `<div class="busy"><div class="spinner"></div><b>${escapeHtml(busyText)}</b>${agentLabel ? `<p>${escapeHtml(agentLabel)}</p>` : ''}${rewriteHtml}${textPreview}<p>自动化流程运行中，请勿关闭程序。</p></div>`;
+  } else if (busyText) {
+    streamHtml = `<div class="busy"><div class="spinner"></div><b>${escapeHtml(busyText)}</b><p>自动化流程运行中，请勿关闭程序。</p></div>`;
+  }
+
   app.innerHTML = `
     <div class="shell">
       ${renderSidebar(state, project)}
       <div class="workspace">${renderTopbar(state, project)}${renderMain(state, project)}</div>
-      ${busyText ? `<div class="busy"><div class="spinner"></div><b>${escapeHtml(busyText)}</b><p>自动化流程运行中，请勿关闭程序。</p></div>` : ''}
+      ${streamHtml}
       ${toast ? `<div class="toast ${toast.tone}">${escapeHtml(toast.message)}</div>` : ''}
     </div>
   `;
@@ -603,8 +618,44 @@ app.addEventListener('click', async (event) => {
 
   if (action === 'generateNextChapter') {
     if (!project) return showToast('请先创建项目', 'error');
-    await runTask('AI 正在生成下一章：检索记忆、生成导演稿、写正文、检查与修正……', () => api.generateNextChapter(project.id));
-    showToast('下一章已生成，确认后才会写入状态库。');
+    busyText = 'AI 正在生成下一章：检索记忆、生成导演稿、写正文、检查与修正……';
+    streamProgress = { agent: '', text: '', rewriteAttempt: 0, rewriteReason: '' };
+    render();
+    try {
+      const chapter = await api.generateNextChapterStream(project.id, {}, (event) => {
+        // 处理流式事件
+        if (event.type === 'agent_start') {
+          streamProgress.agent = event.agent;
+          render();
+        } else if (event.type === 'agent_progress') {
+          streamProgress.agent = event.agent;
+          streamProgress.text = event.text || '';
+          render();
+        } else if (event.type === 'agent_done') {
+          streamProgress.agent = event.agent;
+          streamProgress.text = '';
+          render();
+        } else if (event.type === 'rewrite') {
+          streamProgress.rewriteAttempt = event.attempt;
+          streamProgress.rewriteReason = event.reason;
+          render();
+        } else if (event.type === 'chapter_done') {
+          // 章节完成，更新 store
+          if (event.chapter) {
+            setPendingChapter(event.chapter);
+          }
+        }
+      });
+      streamProgress = null;
+      busyText = '';
+      render();
+      showToast('下一章已生成，确认后才会写入状态库。');
+    } catch (error) {
+      streamProgress = null;
+      busyText = '';
+      render();
+      showToast(toUserError(error), 'error');
+    }
   }
 
   if (action === 'confirmChapter') {

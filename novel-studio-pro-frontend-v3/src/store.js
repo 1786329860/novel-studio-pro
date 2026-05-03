@@ -166,4 +166,12 @@ export function setCurrentProject(projectId) {
   });
 }
 
+export function setPendingChapter(chapter) {
+  return updateState((state) => {
+    state.pendingChapter = chapter;
+    state.viewingChapterIndex = -1;
+    return state;
+  });
+}
+
 export { defaultSettings, defaultState };

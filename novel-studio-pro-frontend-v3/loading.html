@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+    <title>Novel Studio Pro - 启动中</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+          'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+        color: #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        overflow: hidden;
+      }
+
+      .container {
+        text-align: center;
+        max-width: 480px;
+        padding: 40px;
+      }
+
+      .logo {
+        width: 80px;
+        height: 80px;
+        margin: 0 auto 32px;
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        border-radius: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 36px;
+        font-weight: 700;
+        color: white;
+        box-shadow: 0 8px 32px rgba(99, 102, 241, 0.3);
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); box-shadow: 0 8px 32px rgba(99, 102, 241, 0.3); }
+        50% { transform: scale(1.05); box-shadow: 0 12px 40px rgba(99, 102, 241, 0.5); }
+      }
+
+      h1 {
+        font-size: 28px;
+        font-weight: 600;
+        margin-bottom: 8px;
+        background: linear-gradient(135deg, #e2e8f0, #94a3b8);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .subtitle {
+        font-size: 14px;
+        color: #64748b;
+        margin-bottom: 40px;
+      }
+
+      .status-card {
+        background: rgba(30, 41, 59, 0.8);
+        border: 1px solid rgba(99, 102, 241, 0.2);
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 24px;
+        backdrop-filter: blur(10px);
+      }
+
+      .status-indicator {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .spinner {
+        width: 20px;
+        height: 20px;
+        border: 2px solid rgba(99, 102, 241, 0.2);
+        border-top-color: #6366f1;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+
+      .spinner.error {
+        border-top-color: #ef4444;
+        animation: none;
+      }
+
+      .spinner.ready {
+        border-top-color: #22c55e;
+        animation: none;
+      }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      .status-text {
+        font-size: 16px;
+        font-weight: 500;
+        color: #e2e8f0;
+      }
+
+      .status-text.error {
+        color: #ef4444;
+      }
+
+      .status-text.ready {
+        color: #22c55e;
+      }
+
+      .progress-bar {
+        width: 100%;
+        height: 4px;
+        background: rgba(99, 102, 241, 0.1);
+        border-radius: 2px;
+        overflow: hidden;
+        margin-top: 16px;
+      }
+
+      .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #6366f1, #8b5cf6);
+        border-radius: 2px;
+        width: 0%;
+        transition: width 0.5s ease;
+      }
+
+      .progress-fill.error {
+        background: #ef4444;
+      }
+
+      .progress-fill.ready {
+        background: #22c55e;
+        width: 100% !important;
+      }
+
+      .log-area {
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(99, 102, 241, 0.1);
+        border-radius: 12px;
+        padding: 16px;
+        max-height: 200px;
+        overflow-y: auto;
+        text-align: left;
+        font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+        font-size: 12px;
+        line-height: 1.6;
+        color: #94a3b8;
+      }
+
+      .log-area::-webkit-scrollbar {
+        width: 4px;
+      }
+
+      .log-area::-webkit-scrollbar-thumb {
+        background: rgba(99, 102, 241, 0.3);
+        border-radius: 2px;
+      }
+
+      .log-entry {
+        padding: 2px 0;
+        word-break: break-all;
+      }
+
+      .log-entry.error {
+        color: #fca5a5;
+      }
+
+      .tip {
+        font-size: 12px;
+        color: #475569;
+        margin-top: 24px;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="logo">NS</div>
+      <h1>Novel Studio Pro</h1>
+      <p class="subtitle">AI 驱动的长篇小说创作引擎</p>
+
+      <div class="status-card">
+        <div class="status-indicator">
+          <div class="spinner" id="spinner"></div>
+          <span class="status-text" id="statusText">后端启动中...</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+      </div>
+
+      <div class="log-area" id="logArea">
+        <div class="log-entry">正在初始化...</div>
+      </div>
+
+      <p class="tip">
+        首次启动可能需要较长时间安装依赖。<br>
+        如启动失败，请确保已安装 Python 3.8+ 并运行 pip install -r requirements.txt。
+      </p>
+    </div>
+
+    <script>
+      // 监听来自主进程的后端状态更新
+      const { ipcRenderer } = require('electron');
+
+      const spinner = document.getElementById('spinner');
+      const statusText = document.getElementById('statusText');
+      const progressFill = document.getElementById('progressFill');
+      const logArea = document.getElementById('logArea');
+
+      let progress = 0;
+      let progressTimer = null;
+
+      // 模拟进度条（在真实进度到来之前）
+      function startProgressSimulation() {
+        progressTimer = setInterval(() => {
+          if (progress < 90) {
+            progress += Math.random() * 3;
+            progressFill.style.width = progress + '%';
+          }
+        }, 500);
+      }
+
+      function stopProgressSimulation() {
+        if (progressTimer) {
+          clearInterval(progressTimer);
+          progressTimer = null;
+        }
+      }
+
+      // 添加日志条目
+      function addLogEntry(message, isError) {
+        const entry = document.createElement('div');
+        entry.className = 'log-entry' + (isError ? ' error' : '');
+        entry.textContent = message;
+        logArea.appendChild(entry);
+        logArea.scrollTop = logArea.scrollHeight;
+      }
+
+      // 更新状态
+      ipcRenderer.on('backend-status', (event, status) => {
+        switch (status) {
+          case 'starting':
+            statusText.textContent = '后端启动中...';
+            statusText.className = 'status-text';
+            spinner.className = 'spinner';
+            progressFill.className = 'progress-fill';
+            startProgressSimulation();
+            break;
+          case 'ready':
+            statusText.textContent = '启动成功，正在加载...';
+            statusText.className = 'status-text ready';
+            spinner.className = 'spinner ready';
+            progressFill.className = 'progress-fill ready';
+            stopProgressSimulation();
+            break;
+          case 'error':
+            statusText.textContent = '启动失败';
+            statusText.className = 'status-text error';
+            spinner.className = 'spinner error';
+            progressFill.className = 'progress-fill error';
+            progressFill.style.width = '100%';
+            stopProgressSimulation();
+            break;
+          case 'stopped':
+            statusText.textContent = '后端已停止';
+            statusText.className = 'status-text error';
+            spinner.className = 'spinner error';
+            stopProgressSimulation();
+            break;
+        }
+      });
+
+      // 接收日志
+      ipcRenderer.on('backend-log', (event, logEntry) => {
+        addLogEntry(logEntry, logEntry.includes('错误') || logEntry.includes('Error'));
+      });
+
+      // 开始进度模拟
+      startProgressSimulation();
+    </script>
+  </body>
+</html>

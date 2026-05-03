@@ -139,6 +139,98 @@ export const api = {
     );
   },
 
+  // ==================================================================
+  // 任务 2: 任务队列 - 新增方法
+  // ==================================================================
+
+  /**
+   * 提交章节生成任务（任务队列模式）
+   * 立即返回 taskId，客户端通过轮询获取进度
+   */
+  async submitGenerateTask(projectId, options = {}) {
+    const settings = getSettings();
+    const body = {
+      mode: options.mode || settings.generationMode,
+      qualityThreshold: settings.qualityThreshold,
+      maxInputTokens: settings.maxInputTokens,
+      maxOutputTokens: settings.maxOutputTokens,
+      userInstruction: options.userInstruction || ''
+    };
+    return callWithFallback(
+      () => mockApi.generateNextChapter(projectId, body),
+      async () => {
+        const data = await request(`/api/projects/${projectId}/chapters/generate-next`, { method: 'POST', body });
+        // 任务队列模式返回 taskId
+        if (data.taskId) {
+          updateState((state) => {
+            state.currentTaskId = data.taskId;
+            state.lastJob = {
+              type: 'generate_next_chapter',
+              status: 'pending',
+              projectId,
+              taskId: data.taskId,
+              startedAt: new Date().toISOString(),
+              mode: body.mode
+            };
+            return state;
+          });
+        }
+        // 向后兼容: 如果直接返回了 chapter
+        if (data.chapter) {
+          updateState((state) => {
+            state.pendingChapter = data.chapter;
+            state.lastJob = {
+              type: 'generate_next_chapter',
+              status: 'done',
+              projectId,
+              finishedAt: new Date().toISOString(),
+              mode: body.mode
+            };
+            state.activeRoute = 'writing';
+            return state;
+          });
+        }
+        return data;
+      }
+    );
+  },
+
+  /**
+   * 获取任务状态和进度
+   */
+  async getTaskStatus(taskId) {
+    return request(`/api/projects/tasks/${taskId}`);
+  },
+
+  /**
+   * 列出所有任务
+   */
+  async listTasks() {
+    return request('/api/projects/tasks');
+  },
+
+  /**
+   * 取消任务
+   */
+  async cancelTask(taskId) {
+    return request(`/api/projects/tasks/${taskId}/cancel`, { method: 'POST' });
+  },
+
+  // ==================================================================
+  // 任务 1: 用户修改回灌 - 新增方法
+  // ==================================================================
+
+  /**
+   * 分析用户对章节正文的修改
+   * 返回新的 state_delta 预览（不自动应用）
+   */
+  async analyzeEdit(projectId, chapterId, originalText, modifiedText) {
+    return request(`/api/projects/${projectId}/chapters/${chapterId}/analyze-edit`, {
+      method: 'POST',
+      body: { originalText, modifiedText }
+    });
+  },
+
   async confirmChapter(projectId, chapterId) {
     return callWithFallback(
       () => mockApi.confirmChapter(projectId, chapterId),
