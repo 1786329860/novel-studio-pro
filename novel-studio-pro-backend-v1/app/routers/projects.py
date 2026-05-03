@@ -347,7 +347,7 @@ async def cancel_task(task_id: str):
 # 连接测试 & 系统诊断接口
 # ======================================================================
 
-@router.get("/api/test-connection")
+@router.get("/test-connection")
 async def test_connection():
     """测试后端与 DeepSeek 的连通性"""
     from app.core.config import config
@@ -370,7 +370,7 @@ async def test_connection():
         return {"ok": False, "message": f"连接失败: {str(e)[:200]}"}
 
 
-@router.post("/api/test-model")
+@router.post("/test-model")
 async def test_model(body: dict = Body(...)):
     """测试指定模型的连通性"""
     from app.core.config import config
@@ -390,7 +390,7 @@ async def test_model(body: dict = Body(...)):
         return {"ok": False, "model": model, "message": f"模型不可用: {str(e)[:200]}"}
 
 
-@router.get("/api/test-embedding")
+@router.get("/test-embedding")
 async def test_embedding():
     """测试 Embedding 服务连通性"""
     from app.services.embedding_client import embedding_client
@@ -406,7 +406,7 @@ async def test_embedding():
         return {"ok": False, "message": f"Embedding 服务异常: {str(e)[:200]}"}
 
 
-@router.get("/api/request-logs")
+@router.get("/request-logs")
 async def get_request_logs(limit: int = 50):
     """获取最近的 API 请求日志"""
     from app.core.storage import store
@@ -419,7 +419,7 @@ async def get_request_logs(limit: int = 50):
 # 导出接口
 # ======================================================================
 
-@router.get("/api/projects/{project_id}/export-characters")
+@router.get("/{project_id}/export-characters")
 async def export_characters(project_id: str):
     """导出项目角色表为 JSON"""
     from app.core.storage import store
@@ -431,7 +431,7 @@ async def export_characters(project_id: str):
     return {"characters": characters, "exported_at": datetime.now().isoformat()}
 
 
-@router.get("/api/projects/{project_id}/export-events")
+@router.get("/{project_id}/export-events")
 async def export_events(project_id: str):
     """导出事件账本"""
     from app.core.storage import store
@@ -447,7 +447,7 @@ async def export_events(project_id: str):
 # 语义搜索 & 记忆管理接口
 # ======================================================================
 
-@router.post("/api/projects/{project_id}/semantic-search")
+@router.post("/{project_id}/semantic-search")
 async def semantic_search(project_id: str, body: dict = Body(...)):
     """语义搜索相关章节/事件"""
     from app.core.storage import store
@@ -484,7 +484,7 @@ async def semantic_search(project_id: str, body: dict = Body(...)):
     return {"query": query, "type": search_type, "results": results}
 
 
-@router.post("/api/projects/{project_id}/rebuild-memory")
+@router.post("/{project_id}/rebuild-memory")
 async def rebuild_memory(project_id: str):
     """重建全局记忆：为所有章节生成 Embedding 向量"""
     from app.core.storage import store
@@ -529,7 +529,7 @@ async def rebuild_memory(project_id: str):
         return {"ok": False, "message": f"生成失败: {str(e)[:200]}"}
 
 
-@router.post("/api/projects/{project_id}/compress-history")
+@router.post("/{project_id}/compress-history")
 async def compress_history(project_id: str):
     """压缩历史章节正文（保留摘要，删除完整正文以节省 token）"""
     from app.core.storage import store
@@ -558,7 +558,7 @@ async def compress_history(project_id: str):
     return {"ok": True, "compressed": compressed_count, "message": f"已压缩 {compressed_count} 个章节的正文"}
 
 
-@router.post("/api/projects/{project_id}/rebuild-ledger")
+@router.post("/{project_id}/rebuild-ledger")
 async def rebuild_ledger(project_id: str):
     """从所有章节中重建事件账本"""
     from app.core.storage import store
