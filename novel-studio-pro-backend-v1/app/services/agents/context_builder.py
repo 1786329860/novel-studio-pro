@@ -198,6 +198,7 @@ class ContextBuilder:
         # 10. 字数控制
         context["target_total_words"] = target_total_words
         context["min_words"] = min_words
+        context["max_words"] = target_total_words  # max_words = target_total_words (用户设置的最大值)
 
         logger.info("[ContextBuilder] 写作上下文构建完成 (目标字数: %d-%d)", min_words, target_total_words)
         return context
