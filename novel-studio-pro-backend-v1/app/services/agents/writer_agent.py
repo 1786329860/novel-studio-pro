@@ -275,21 +275,6 @@ class WriterAgent(BaseAgent):
 
         # 拼接所有场景正文
         full_text = "\n\n".join(scene_texts)
-
-        # 硬性截断：如果总字数超过目标上限的120%，截断到最后一个完整段落
-        max_words = context.get("max_words", target_total_words * 1.2)
-        if len(full_text) > max_words:
-            paragraphs = full_text.split('\n\n')
-            truncated = []
-            current_len = 0
-            for p in paragraphs:
-                if current_len + len(p) > max_words and truncated:
-                    break
-                truncated.append(p)
-                current_len += len(p)
-            full_text = '\n\n'.join(truncated)
-            logger.warning("[Writer] 总字数 %d 超过上限 %d，已截断", len(full_text), int(max_words))
-
         word_count = len(full_text)
 
         # 估算对话占比
@@ -426,21 +411,6 @@ class WriterAgent(BaseAgent):
 
         # 拼接所有场景正文
         full_text = "\n\n".join(scene_texts)
-
-        # 硬性截断：如果总字数超过目标上限的120%，截断到最后一个完整段落
-        max_words = context.get("max_words", target_total_words * 1.2)
-        if len(full_text) > max_words:
-            paragraphs = full_text.split('\n\n')
-            truncated = []
-            current_len = 0
-            for p in paragraphs:
-                if current_len + len(p) > max_words and truncated:
-                    break
-                truncated.append(p)
-                current_len += len(p)
-            full_text = '\n\n'.join(truncated)
-            logger.warning("[Writer] 总字数 %d 超过上限 %d，已截断", len(full_text), int(max_words))
-
         word_count = len(full_text)
 
         # 估算对话占比
