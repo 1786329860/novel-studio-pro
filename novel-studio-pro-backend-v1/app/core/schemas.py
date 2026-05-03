@@ -18,6 +18,8 @@ class GenerateChapterRequest(BaseModel):
     maxInputTokens: int = 64000
     maxOutputTokens: int = 12000
     userInstruction: str = ""
+    minWords: int = 3000
+    maxWords: int = 8000
 
 
 class StateAnalyzeResponse(BaseModel):

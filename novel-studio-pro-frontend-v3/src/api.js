@@ -116,7 +116,9 @@ export const api = {
       qualityThreshold: settings.qualityThreshold,
       maxInputTokens: settings.maxInputTokens,
       maxOutputTokens: settings.maxOutputTokens,
-      userInstruction: options.userInstruction || ''
+      userInstruction: options.userInstruction || '',
+      minWords: settings.chapterWordTargetMin || 3000,
+      maxWords: settings.chapterWordTargetMax || 8000,
     };
     return callWithFallback(
       () => mockApi.generateNextChapter(projectId, body),
@@ -185,7 +187,9 @@ export const api = {
       qualityThreshold: settings.qualityThreshold,
       maxInputTokens: settings.maxInputTokens,
       maxOutputTokens: settings.maxOutputTokens,
-      userInstruction: options.userInstruction || ''
+      userInstruction: options.userInstruction || '',
+      minWords: settings.chapterWordTargetMin || 3000,
+      maxWords: settings.chapterWordTargetMax || 8000,
     };
 
     const response = await fetch(url, {

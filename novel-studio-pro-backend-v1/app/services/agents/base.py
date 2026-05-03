@@ -97,7 +97,7 @@ class BaseAgent(ABC):
             Agent 的结构化输出 dict
         """
         generation = settings_service.get_generation()
-        is_mock = generation.get("mockMode", True)
+        is_mock = generation.get("mockMode", False)
         is_ready = deepseek_client.is_ready()
 
         if is_mock or not is_ready:

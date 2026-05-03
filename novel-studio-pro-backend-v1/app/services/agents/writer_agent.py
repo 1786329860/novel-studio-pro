@@ -158,7 +158,7 @@ class WriterAgent(BaseAgent):
             {"type": "result", "data": {...}} - 最终结构化结果
         """
         generation = settings_service.get_generation()
-        is_mock = generation.get("mockMode", True)
+        is_mock = generation.get("mockMode", False)
         is_ready = deepseek_client.is_ready()
 
         if is_mock or not is_ready:
@@ -228,7 +228,7 @@ class WriterAgent(BaseAgent):
             与 run() 输出格式一致的结构化 dict
         """
         generation = settings_service.get_generation()
-        is_mock = generation.get("mockMode", True)
+        is_mock = generation.get("mockMode", False)
         is_ready = deepseek_client.is_ready()
 
         project = context.get("project", {})
@@ -316,7 +316,7 @@ class WriterAgent(BaseAgent):
             {"type": "result", "data": {...}} - 最终结构化结果
         """
         generation = settings_service.get_generation()
-        is_mock = generation.get("mockMode", True)
+        is_mock = generation.get("mockMode", False)
         is_ready = deepseek_client.is_ready()
 
         project = context.get("project", {})

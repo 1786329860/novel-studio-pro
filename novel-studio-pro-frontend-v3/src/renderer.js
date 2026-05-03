@@ -736,6 +736,7 @@ app.addEventListener('click', async (event) => {
   if (action === 'confirmChapter') {
     if (!project || !state.pendingChapter) return showToast('没有待确认章节', 'error');
     await runTask('正在确认章节并合并状态……', () => api.confirmChapter(project.id, state.pendingChapter.id));
+    setViewingChapterIndex(project.chapters.length - 1);
     showToast('本章已确认，事件账本和状态库已更新。');
   }
 
@@ -1173,11 +1174,12 @@ app.addEventListener('click', async (event) => {
   if (action === 'rewriteChapter') {
     if (!project) return showToast('请先创建项目', 'error');
     if (busyText) return;
+    const chapter = state.pendingChapter || (state.viewingChapterIndex >= 0 ? project.chapters[state.viewingChapterIndex] : null);
+    if (!chapter) return showToast('没有可重写的章节', 'error');
     runTask('正在重写本章...', async () => {
-      const chapter = state.pendingChapter;
-      if (!chapter) return showToast('没有可重写的章节', 'error');
       const result = await api.generateNextChapterStream(project.id, {
-        userInstruction: `请重写第${chapter.number}章「${chapter.title}」，保持相同剧情走向但重新创作正文`
+        userInstruction: '重写本章，保持相同剧情方向但用不同的表达方式',
+        rewriteChapterNumber: chapter.number
       });
       if (result) showToast('重写完成');
     });

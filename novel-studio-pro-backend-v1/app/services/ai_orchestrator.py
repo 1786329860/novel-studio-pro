@@ -274,7 +274,7 @@ def build_mock_blueprint(project: dict[str, Any], variant: str = "standard") -> 
 
 async def maybe_deepseek_blueprint(project: dict[str, Any]) -> dict[str, Any] | None:
     generation = settings_service.get_all(safe=False).get("generation", {})
-    if generation.get("mockMode", True) or not deepseek_client.is_ready():
+    if generation.get("mockMode", False) or not deepseek_client.is_ready():
         return None
     routes = settings_service.get_all(safe=False).get("modelRoutes", {})
     route = routes.get("outlineExpansion", {})
@@ -387,7 +387,7 @@ def build_mock_chapter(project: dict[str, Any], options: dict[str, Any]) -> dict
 async def maybe_deepseek_chapter(project: dict[str, Any], options: dict[str, Any]) -> dict[str, Any] | None:
     """原有单步 DeepSeek 章节生成（保留向后兼容）。"""
     generation = settings_service.get_all(safe=False).get("generation", {})
-    if generation.get("mockMode", True) or not deepseek_client.is_ready():
+    if generation.get("mockMode", False) or not deepseek_client.is_ready():
         return None
     routes = settings_service.get_all(safe=False).get("modelRoutes", {})
     route = routes.get("chapterWriting", {})
@@ -549,7 +549,7 @@ async def _run_full_pipeline(
         )
         writer_agent = WriterAgent()
         chapter_text = await writer_agent.write_by_scene(
-            writer_ctx, scenes, target_total_words=5000
+            writer_ctx, scenes, target_total_words=options.get("maxWords", 5000)
         )
     else:
         # 1-2 个场景，使用整章生成（原有逻辑）
@@ -762,7 +762,7 @@ async def generate_next_chapter_stream(
                 }
                 writer_agent = WriterAgent()
                 async for event in writer_agent.write_by_scene_stream(
-                    writer_ctx, stream_scenes, target_total_words=5000
+                    writer_ctx, stream_scenes, target_total_words=options.get("maxWords", 5000)
                 ):
                     if event.get("type") == "scene_start":
                         yield {
