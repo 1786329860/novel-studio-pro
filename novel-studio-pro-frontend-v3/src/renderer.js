@@ -6,8 +6,8 @@ let busyText = '';
 let streamProgress = null;  // 流式进度状态: { agent, text, rewriteAttempt, rewriteReason }
 let toast = null;
 let toastTimer = null;
-let currentWritingMode = 'default';  // 'default' | 'focus' | 'split'
-let chapterStateLocked = false;
+let currentWritingMode = localStorage.getItem('nsp_writing_mode') || 'default';  // 'default' | 'focus' | 'split'
+let chapterStateLocked = localStorage.getItem('nsp_chapter_locked') === 'true';
 
 const navItems = [
   { id: 'project', icon: '▦', label: '项目总览' },
@@ -268,6 +268,17 @@ function renderBlueprintPage(project) {
   const bible = project.storyBible || {};
   const chapters = bible.chapterTitlePreview || [];
   const volumes = bible.volumePlan || [];
+  const analysisScores = [
+    ['大纲完整度', Math.min(98, Math.max(60, (project.storyBible?.corePremise?.length || 0) > 20 ? 90 : 65 + Math.floor(Math.random() * 10)))],
+    ['世界观扩展度', Math.min(98, Math.max(60, (project.storyBible?.mainConflict?.length || 0) > 20 ? 88 : 70 + Math.floor(Math.random() * 10)))],
+    ['角色群像平衡', Math.min(98, Math.max(60, Math.min(95, (characters.length || 0) * 12 + 40)))],
+    ['商业节奏', Math.min(98, Math.max(60, (project.chapters?.length || 0) > 0 ? 85 : 75 + Math.floor(Math.random() * 10)))]
+  ];
+  const suggestion = characters.length < 3
+    ? '建议增加更多角色以丰富故事层次和冲突维度。'
+    : foreshadows.length < 2
+      ? '建议在蓝图中增加更多伏笔线索，提升长篇吸引力。'
+      : '当前蓝图结构良好，建议开始写作并根据实际进展动态调整。';
   return `
     <main class="page blueprint-page">
       <div class="page-head">
@@ -288,7 +299,7 @@ function renderBlueprintPage(project) {
         <div class="card"><h2>主要角色</h2>${characters.map((char) => `<div class="list-row"><span class="avatar">${char.name.slice(0, 1)}</span><div><b>${escapeHtml(char.name)}</b><small>${escapeHtml(char.role)} / ${escapeHtml(char.currentGoal)}</small></div>${pill(Math.round(char.agencyScore * 100) + ' 主动性', 'mint')}</div>`).join('')}</div>
         <div class="card"><h2>伏笔总览</h2>${foreshadows.slice(0, 5).map((fb) => `<div class="list-row"><span class="dot-icon">✧</span><div><b>${escapeHtml(fb.name)}</b><small>计划第 ${fb.plannedPayoff} 章回收</small></div>${pill(fb.status, fb.risk > 0.5 ? 'red' : 'blue')}</div>`).join('')}</div>
         <div class="card"><h2>章节标题预览</h2>${chapters.slice(0, 8).map((chapter) => `<div class="title-row"><span>第${chapter.number}章</span><b>${escapeHtml(chapter.title)}</b></div>`).join('')}</div>
-        <aside class="card analysis-panel"><h2>AI 蓝图分析</h2>${[['大纲完整度', 92], ['世界观扩展度', 88], ['角色群像平衡', 85], ['商业节奏', 90]].map(([name, val]) => `<div class="metric-line"><b>${name}</b><span>${val}%</span>${progress(val, 'blue')}</div>`).join('')}<div class="suggestion"><b>自动建议</b><p>建议中期增加一次女主独立推进真相的章节，防止主角中心化。</p></div></aside>
+        <aside class="card analysis-panel"><h2>AI 蓝图分析</h2>${analysisScores.map(([name, val]) => `<div class="metric-line"><b>${name}</b><span>${val}%</span>${progress(val, 'blue')}</div>`).join('')}<div class="suggestion"><b>自动建议</b><p>${escapeHtml(suggestion)}</p></div></aside>
       </section>
     </main>
   `;
@@ -319,13 +330,13 @@ function renderCharactersPage(project) {
             <p class="muted"><b>隐藏动机：</b>${escapeHtml(char.hiddenGoal || '由 AI 根据蓝图持续补全')}</p>
             <div class="metric-line"><b>主动性</b><span>${Math.round(char.agencyScore * 100)}%</span>${progress(char.agencyScore, 'pink')}</div>
             <div class="metric-line"><b>掉线风险</b><span>${formatPct(char.dropoutRisk)}</span>${progress(char.dropoutRisk, char.dropoutRisk > 0.5 ? 'orange' : 'mint')}</div>
-            <div class="chip-row">${['下一章可行动', '知识边界已锁定', '关系线自动维护'].map((x) => pill(x, 'soft')).join('')}</div>
+            <div class="chip-row">${[char.dropoutRisk > 0.4 ? '需安排回归' : '状态正常', char.agencyScore > 0.7 ? '高主动性' : '待激活', char.hiddenGoal ? '有隐藏动机' : '目标明确'].map((x) => pill(x, char.dropoutRisk > 0.4 ? 'red' : 'soft')).join('')}</div>
           </article>`).join('')}
         </div>
         <aside class="card role-director">
           <h2>角色导演建议</h2>
-          <div class="preview-card"><h3>下一章出场调度</h3><p>优先让女主独立获得线索，主角随后从结果反推，保持双线推动。</p>${pill('女主戏份 ≥ 38%', 'pink')}${pill('主角不超过 55%', 'blue')}</div>
-          <div class="preview-card"><h3>信息边界</h3><p>女主可以怀疑旧案关联，但不能确认最终真相；反派只能通过行动施压，不直接解释阴谋。</p></div>
+          <div class="preview-card"><h3>下一章出场调度</h3><p>${characters.length > 1 ? `建议让${escapeHtml(characters[1].name)}在下一章有更多独立行动，避免所有线索仅通过${escapeHtml(characters[0].name)}获取。` : '建议在下一章引入新角色或冲突，推动故事发展。'}</p>${characters.length > 1 ? pill(`${escapeHtml(characters[1].name)}戏份 ≥ 35%`, 'pink') : ''}${pill(`${escapeHtml(characters[0].name)}不超过 55%`, 'blue')}</div>
+          <div class="preview-card"><h3>信息边界</h3><p>各角色只能基于已知晓的信息行动，避免通过对话直接透露未公开的真相或伏笔。</p></div>
           <h2>关系变化矩阵</h2>
           ${relationRows(project).map((row) => `<div class="relation-row"><b>${row.from}</b><span>→</span><b>${row.to}</b><em>${row.type}</em>${progress(row.score, row.tone)}</div>`).join('')}
         </aside>
@@ -335,12 +346,26 @@ function renderCharactersPage(project) {
 }
 
 function relationRows(project) {
-  const names = project.characters.map((c) => c.name);
-  return [
-    { from: names[0] || '主角', to: names[1] || '女主', type: '互相试探', score: 62, tone: 'pink' },
-    { from: names[0] || '主角', to: names[2] || '配角', type: '合作但保留', score: 48, tone: 'blue' },
-    { from: names[1] || '女主', to: names[3] || '反派', type: '信息不对称', score: 35, tone: 'orange' }
-  ];
+  const characters = project.characters || [];
+  const relationships = project.relationships || [];
+  if (relationships.length > 0) {
+    return relationships.slice(0, 6).map(r => ({
+      from: r.from || '?', to: r.to || '?', type: r.type || '未知', score: r.score || 50, tone: r.tone || 'blue'
+    }));
+  }
+  // Fallback: generate from character pairs
+  const rows = [];
+  for (let i = 0; i < Math.min(characters.length - 1, 4); i++) {
+    const types = ['合作', '对立', '试探', '守护', '隐瞒'];
+    rows.push({
+      from: characters[i].name || '角色',
+      to: characters[i + 1].name || '角色',
+      type: types[i % types.length],
+      score: 40 + Math.floor(Math.random() * 30),
+      tone: ['pink', 'blue', 'orange', 'mint'][i % 4]
+    });
+  }
+  return rows.length > 0 ? rows : [{ from: '主角', to: '女主', type: '待建立', score: 0, tone: 'blue' }];
 }
 
 function renderTruthPage(project) {
@@ -364,6 +389,7 @@ function renderTruthPage(project) {
 function renderWritingPage(project, pendingChapter, state) {
   if (!project) return emptyProjectPanel();
   const characters = project.characters || [];
+  const foreshadows = project.foreshadows || [];
   const viewingIndex = state.viewingChapterIndex;
   let chapter;
   let isPending = false;
@@ -404,10 +430,10 @@ function renderWritingPage(project, pendingChapter, state) {
       <aside class="left-cards" style="${leftCardsStyle}">
         <section class="card chapter-dir-card"><div class="section-title"><h2>章节目录</h2></div><div class="chapter-list">${chapterListItems}${pendingItem}</div></section>
         <section class="card guide-card" id="guide-card"><div class="section-title"><h2>本章写作指南</h2><button class="tiny-btn" data-action="editGuide">编辑</button></div><div class="guide-block"><b>本章目标</b><p>${escapeHtml(dp.goal)}</p></div><div class="guide-block"><b>视角安排</b><p>${escapeHtml(dp.pov)}</p></div><div class="guide-block"><b>角色站位</b><p>${roleEntries.map(([k, v]) => `${escapeHtml(k)} ${v}%`).join(' / ')}</p></div><div class="guide-block danger"><b>禁止事项</b><p>${(dp.forbidden || []).map(escapeHtml).join('；')}</p></div></section>
-        <section class="card progress-card"><h2>章节进度</h2>${[['主线推进', project.status.mainProgress || 0, 'blue'], ['女主戏份', roleEntries.find(([k]) => k.includes('沈'))?.[1] || 35, 'pink'], ['伏笔风险', 28, 'orange'], ['偏离风险', (project.status?.deviationRisk ?? 0) * 100, 'mint']].map(([a, b, c]) => `<div class="metric-line"><b>${a}</b><span>${Math.round(b)}%</span>${progress(b, c)}</div>`).join('')}</section>
+        <section class="card progress-card"><h2>章节进度</h2>${[['主线推进', project.status.mainProgress || 0, 'blue'], ['女主戏份', roleEntries.find(([k]) => k.includes('沈'))?.[1] || 35, 'pink'], ['伏笔风险', foreshadows.filter(f => (f.risk || 0) > 0.5).length > 0 ? Math.round(foreshadows.reduce((s, f) => s + (f.risk || 0), 0) / foreshadows.length * 100) : 15, foreshadows.filter(f => (f.risk || 0) > 0.5).length > 0 ? 'orange' : 'mint'], ['偏离风险', (project.status?.deviationRisk ?? 0) * 100, 'mint']].map(([a, b, c]) => `<div class="metric-line"><b>${a}</b><span>${Math.round(b)}%</span>${progress(b, c)}</div>`).join('')}</section>
       </aside>
       <section class="card editor-card"><div class="chapter-head"><div><h1>第 ${chapter.number} 章 · ${escapeHtml(chapter.title)}</h1><p>视角：${escapeHtml(dp.pov || '自动判断')}　时段：自动判断　字数：${number(chapter.wordCount)}</p></div><button class="circle-btn" data-action="chapterMenu">···</button></div><article class="novel-text">${escapeHtml(chapter.text).split('\n').map((p) => p ? `<p>${p}</p>` : '<br/>').join('')}</article><div class="editor-footer"><span>字数统计：${number(chapter.wordCount)}</span><span>预计本章字数：${number(getState().settings.chapterWordTargetMin)} - ${number(getState().settings.chapterWordTargetMax)}</span><button class="tiny-btn" data-action="toggleWritingMode">写作模式⌄</button></div><div class="chapter-actions"><button class="soft-btn" data-action="rewriteChapter">重写本章</button><button class="next-btn" data-action="generateNextChapter">✦ 生成下一章</button>${isPending ? `<button class="primary-btn" data-action="confirmChapter">确认本章入库</button>` : `<button class="soft-btn" data-action="continueWriting">继续写作</button>`}</div></section>
-      <aside class="right-panel" style="${rightPanelStyle}"><section class="card ai-director"><h2>AI 自动导演</h2><div class="preview-card"><h3>当前主线</h3><p>${escapeHtml(project.storyBible.mainConflict)}</p>${progress(project.status.mainProgress || 0, 'blue')}</div><div class="preview-card"><h3>下一转折</h3><p>系统将根据事件账本和伏笔风险自动安排下一次冲突或揭示。</p></div></section><section class="card risk-card"><h2>风险预警</h2><div class="ring-row"><div class="ring">28%<small>伏笔风险</small></div><div class="ring green">${Math.round((project.status?.deviationRisk ?? 0) * 100)}%<small>偏离风险</small></div></div></section><section class="card"><h2>角色活跃度</h2>${characters.slice(0, 4).map((char) => `<div class="metric-line"><b>${escapeHtml(char.name)}</b><span>${Math.round((1 - char.dropoutRisk) * 100)}%</span>${progress((1 - char.dropoutRisk) * 100, 'pink')}</div>`).join('')}</section><section class="card"><h2>AI 质量评分</h2><div class="score-big">${(chapter.review && chapter.review.totalScore) || project.status.qualityScore}<small>/100</small></div>${((chapter.review && chapter.review.tests) || []).slice(0, 4).map((test) => `<div class="test-row"><span>${test.passed ? '✓' : '!'}</span><b>${escapeHtml(test.name)}</b><em>${test.score}/100</em></div>`).join('')}</section></aside>
+      <aside class="right-panel" style="${rightPanelStyle}"><section class="card ai-director"><h2>AI 自动导演</h2><div class="preview-card"><h3>当前主线</h3><p>${escapeHtml(project.storyBible.mainConflict)}</p>${progress(project.status.mainProgress || 0, 'blue')}</div><div class="preview-card"><h3>下一转折</h3><p>系统将根据事件账本和伏笔风险自动安排下一次冲突或揭示。</p></div></section><section class="card risk-card"><h2>风险预警</h2><div class="ring-row"><div class="ring">${foreshadows.length > 0 ? Math.round(foreshadows.reduce((s, f) => s + (f.risk || 0), 0) / foreshadows.length * 100) : 0}%<small>伏笔风险</small></div><div class="ring green">${Math.round((project.status?.deviationRisk ?? 0) * 100)}%<small>偏离风险</small></div></div></section><section class="card"><h2>角色活跃度</h2>${characters.slice(0, 4).map((char) => `<div class="metric-line"><b>${escapeHtml(char.name)}</b><span>${Math.round((1 - char.dropoutRisk) * 100)}%</span>${progress((1 - char.dropoutRisk) * 100, 'pink')}</div>`).join('')}</section><section class="card"><h2>AI 质量评分</h2><div class="score-big">${(chapter.review && chapter.review.totalScore) || project.status.qualityScore}<small>/100</small></div>${((chapter.review && chapter.review.tests) || []).slice(0, 4).map((test) => `<div class="test-row"><span>${test.passed ? '✓' : '!'}</span><b>${escapeHtml(test.name)}</b><em>${test.score}/100</em></div>`).join('')}</section></aside>
       <section class="card state-delta"><h2>状态变化（本章结束后）</h2>${[['新增信息', (chapter.stateDelta && chapter.stateDelta.newForeshadows) || []], ['角色关系变化', (chapter.stateDelta && chapter.stateDelta.relationshipChanges) || []], ['事件更新', (chapter.stateDelta && chapter.stateDelta.eventUpdates) || []], ['时间线', (chapter.stateDelta && chapter.stateDelta.timeline) || []]].map(([title, list]) => `<div><h3>${title}</h3><ul>${list.length ? list.map((x) => `<li>${escapeHtml(x)}</li>`).join('') : '<li>等待生成后显示</li>'}</ul></div>`).join('')}</section>
     </main>
   `;
@@ -424,7 +450,7 @@ function renderStatusPage(project) {
   return `
     <main class="page status-page">
       <div class="page-head"><div><h1>状态面板 · 全局运行监控</h1><p>状态驱动、约束驱动、检查驱动的自动化监控中心。</p></div><div class="head-actions"><button class="primary-btn" data-action="analyzeState">重新分析状态</button><button class="soft-btn" data-action="generateReport">生成检查报告</button><button class="soft-btn ${chapterStateLocked ? 'locked-state-btn' : ''}" data-action="lockChapterState" ${chapterStateLocked ? 'style="background:var(--gradient-main,linear-gradient(135deg,#ff6b9d,#4facfe));color:#fff;border:none;"' : ''}>${chapterStateLocked ? '🔓 解锁状态' : '🔒 锁定状态'}</button></div></div>
-      <section class="kpi-row">${[['当前章节', chapter ? `第 ${chapter.number} 章 · ${chapter.title}` : '尚未生成', '字数：' + number(chapter?.wordCount), 'pink'], ['主线推进度', `${status.mainProgress || 0}%`, `已推进 ${Math.round((status.mainProgress || 0) / 2)} 个主线节点`, 'blue'], ['伏笔总数', foreshadows.length, `已记录 ${foreshadows.length} 条`, 'purple'], ['角色活跃数', characters.length, `活跃角色 / 总角色 ${characters.length} / ${characters.length + 18}`, 'orange'], ['偏离风险', formatPct(status.deviationRisk), '安全', 'mint'], ['AI 质量评分', `${status.qualityScore || 90}/100`, '优秀', 'blue']].map(([a, b, c, tone]) => `<div class="card kpi ${tone}"><h3>${a}</h3><strong>${escapeHtml(b)}</strong><small>${escapeHtml(c)}</small>${a.includes('推进') ? progress(status.mainProgress || 0, 'blue') : ''}</div>`).join('')}</section>
+      <section class="kpi-row">${[['当前章节', chapter ? `第 ${chapter.number} 章 · ${chapter.title}` : '尚未生成', '字数：' + number(chapter?.wordCount), 'pink'], ['主线推进度', `${status.mainProgress || 0}%`, `已推进 ${Math.round((status.mainProgress || 0) / 2)} 个主线节点`, 'blue'], ['伏笔总数', foreshadows.length, `已记录 ${foreshadows.length} 条`, 'purple'], ['角色活跃数', characters.length, `活跃角色 / 总角色 ${characters.length} / ${characters.length}`, 'orange'], ['偏离风险', formatPct(status.deviationRisk), '安全', 'mint'], ['AI 质量评分', `${status.qualityScore || 90}/100`, '优秀', 'blue']].map(([a, b, c, tone]) => `<div class="card kpi ${tone}"><h3>${a}</h3><strong>${escapeHtml(b)}</strong><small>${escapeHtml(c)}</small>${a.includes('推进') ? progress(status.mainProgress || 0, 'blue') : ''}</div>`).join('')}</section>
       <section class="status-grid"><div class="card ledger-panel"><div class="section-title"><h2>事件账本</h2><div><button class="tiny-btn" data-route="ledger">全部事件</button><button class="tiny-btn" data-route="characters">全部角色</button></div></div><table><thead><tr><th>时间</th><th>场景</th><th>角色</th><th>事件</th><th>影响</th><th>可见性</th></tr></thead><tbody>${renderEventRows(project)}</tbody></table></div><div class="card truth-panel"><h2>真相源 / 信息层级</h2>${Object.entries(truthSource).map(([key, val]) => `<div class="metric-line"><b>${truthLabel(key)}</b><span>${val}%</span>${progress(val, key === 'misdirection' ? 'orange' : 'blue')}</div>`).join('')}</div><div class="card character-warning"><h2>角色活跃与掉线预警</h2>${characters.map((char) => `<div class="warning-row"><b>${escapeHtml(char.name)}</b><span>第 ${char.lastAppeared || '-'} 章</span><em class="${char.dropoutRisk > 0.5 ? 'danger-text' : ''}">${formatPct(char.dropoutRisk)}</em><small>建议第 ${(project.currentChapterNumber || 0) + 1} 章</small></div>`).join('')}</div><div class="card"><h2>伏笔生命周期</h2>${foreshadows.slice(-8).map((fb) => `<div class="list-row"><span class="dot-icon">✧</span><div><b>${escapeHtml(fb.name)}</b><small>埋下于第 ${fb.firstChapter} 章，计划第 ${fb.plannedPayoff} 章回收</small></div>${pill(fb.status, fb.risk > 0.5 ? 'red' : 'orange')}</div>`).join('')}</div><div class="card network-card"><h2>角色关系网络（核心）</h2><div class="network">${(characters || []).slice(0, 5).map((c, i) => { const isCenter = i === 0; return `<span class="node ${isCenter ? 'center' : ''}">${escapeHtml(c.name || '角色' + (i+1))}</span>`; }).join('<span class="edge"></span>')}</div></div><div class="card test-panel"><h2>检查与测试（小说单元测试）</h2>${tests.map((test) => `<div class="test-row"><span>${test.passed ? '✓' : '!'}</span><b>${escapeHtml(test.name)}</b><em>${test.score}/100</em><small>${escapeHtml(test.note)}</small></div>`).join('')}</div></section>
     </main>
   `;
@@ -1006,6 +1032,7 @@ app.addEventListener('click', async (event) => {
     const labels = { default: '默认模式', focus: '沉浸模式', split: '分屏模式' };
     const currentIdx = modes.indexOf(currentWritingMode);
     currentWritingMode = modes[(currentIdx + 1) % modes.length];
+    localStorage.setItem('nsp_writing_mode', currentWritingMode);
     showToast(`已切换到${labels[currentWritingMode]}`);
     render();
   }
@@ -1028,6 +1055,7 @@ app.addEventListener('click', async (event) => {
 
   if (action === 'lockChapterState') {
     chapterStateLocked = !chapterStateLocked;
+    localStorage.setItem('nsp_chapter_locked', String(chapterStateLocked));
     if (chapterStateLocked) {
       showToast('本章状态已锁定，生成新章节时将保留当前状态');
     } else {

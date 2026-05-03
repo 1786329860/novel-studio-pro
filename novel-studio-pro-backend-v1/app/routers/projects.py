@@ -464,7 +464,7 @@ async def semantic_search(project_id: str, body: dict = Body(...)):
 
     if search_type == "chapters":
         docs = [
-            {"id": ch.get("number", i), "text": f"第{ch.get('number','')}章 {ch.get('title','')} {ch.get('content','')[:500]}", "embedding": ch.get("embedding")}
+            {"id": ch.get("number", i), "text": f"第{ch.get('number','')}章 {ch.get('title','')} {ch.get('text','')[:500]}", "embedding": ch.get("embedding")}
             for i, ch in enumerate(project.get("chapters", []))
         ]
     elif search_type == "events":
@@ -507,7 +507,7 @@ async def rebuild_memory(project_id: str):
     indices = []
     for i, ch in enumerate(chapters):
         if not ch.get("embedding"):
-            text = f"第{ch.get('number','')}章 {ch.get('title','')}\n{ch.get('content','')[:1000]}"
+            text = f"第{ch.get('number','')}章 {ch.get('title','')}\n{ch.get('text','')[:1000]}"
             texts.append(text)
             indices.append(i)
 
@@ -543,10 +543,10 @@ async def compress_history(project_id: str):
     compressed_count = 0
 
     for ch in chapters:
-        content = ch.get("content", "")
+        content = ch.get("text", "")
         if content and len(content) > 200 and not ch.get("compressed"):
             # 保留前200字作为摘要
-            ch["content"] = content[:200] + "\n\n[... 已压缩，原文 " + str(len(content)) + " 字 ...]"
+            ch["text"] = content[:200] + "\n\n[... 已压缩，原文 " + str(len(content)) + " 字 ...]"
             ch["compressed"] = True
             ch["original_length"] = len(content)
             compressed_count += 1

@@ -50,10 +50,15 @@ def chapter_title(n: int) -> str:
         "来自深渊的低语", "青州旧案", "雨夜追凶", "沉默的家徽", "钟楼下的誓言",
         "王都来信", "暗流涌动", "被抹去的名字", "旧账与夜火", "雾中来客",
         "真相的一角", "不该出现的令牌", "少女的独行", "沉入火中的船", "黎明之前",
+        "风暴前夕", "意外的重逢", "消失的证人", "密室疑云", "血色黄昏",
+        "深渊回响", "破晓之光", "暗夜行者", "命运的岔路", "沉默的真相",
+        "迷雾森林", "最后的赌注", "逆转之局", "隐秘的盟约", "破碎的镜像",
+        "星河倒影", "追风逐月", "逆流而上", "冰与火之歌", "命运的齿轮",
+        "暗影中的手", "浮出水面的秘密", "风暴中心", "最后的防线", "黎明破晓",
+        "深渊凝视", "命运的玩笑", "暗夜独行", "破茧成蝶", "归途之光",
+        "迷途知返", "最后的审判", "暗流之下的真相", "命运的馈赠", "黎明终将到来",
     ]
-    if n <= len(pool):
-        return pool[n - 1]
-    return f"第{n}个未解之夜"
+    return pool[(n - 1) % len(pool)]
 
 
 def default_characters(title: str, genre: str) -> list[dict[str, Any]]:
@@ -283,8 +288,8 @@ async def maybe_deepseek_blueprint(project: dict[str, Any]) -> dict[str, Any] | 
             task_name="outlineExpansion",
         )
         return data
-    except Exception:
-        # 第一版不让 DeepSeek 错误打断个人创作流程，自动回退 Mock。
+    except Exception as exc:
+        logger.error("[Blueprint] DeepSeek 蓝图生成失败: %s", exc, exc_info=True)
         return None
 
 

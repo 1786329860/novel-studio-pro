@@ -359,12 +359,15 @@ def _apply_event_updates(
     # StateMerger 处理的事件有 description 字段，旧格式的事件通常是字符串
     for index, event in enumerate(event_updates):
         if isinstance(event, str):
+            # Get actual character names from project
+            char_names = [c.get("name", "") for c in project.get("characters", []) if c.get("name")]
+            characters_str = " / ".join(char_names[:3]) if char_names else "未知角色"
             event = {
                 "id": make_id("evt"),
                 "chapter": chapter.get("number"),
                 "time": f"第{chapter.get('number')}章 0{index}:12",
                 "scene": "自动识别场景",
-                "characters": "江离 / 沈烬" if index % 2 else "江离",
+                "characters": characters_str if index % 2 else char_names[0] if char_names else "未知角色",
                 "event": event,
                 "impact": "推进主线" if index % 2 == 0 else "角色行动",
                 "visibility": "主角/读者",
@@ -535,10 +538,11 @@ def _apply_memory_update(
 
     # 章节摘要
     summaries = memory.setdefault("chapterSummaries", [])
+    ch_title = chapter.get("title", f"第{current_chapter}章")
     summaries.append({
         "chapter": current_chapter,
         "title": chapter.get("title"),
-        "summary": f"第{current_chapter}章推进了旧案调查，并更新了角色关系与伏笔。",
+        "summary": f"第{current_chapter}章「{ch_title}」已完成，状态已更新。",
         "wordCount": chapter.get("wordCount", 0),
     })
 
