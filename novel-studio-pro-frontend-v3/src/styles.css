@@ -854,6 +854,8 @@ h3 {
   grid-template-columns: 250px minmax(520px, 1fr) 390px;
   grid-template-rows: 1fr auto;
   gap: 14px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .left-cards,
@@ -883,6 +885,7 @@ h3 {
 .editor-card {
   padding: 0;
   overflow: hidden;
+  min-height: 0;
 }
 
 .chapter-head {
@@ -915,6 +918,9 @@ h3 {
   font-size: 17px;
   line-height: 2.05;
   color: #354158;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .novel-text p {
@@ -923,6 +929,7 @@ h3 {
 
 .editor-footer {
   height: 52px;
+  min-height: 52px;
   border-top: 1px solid var(--line);
   padding: 0 24px;
   display: flex;
