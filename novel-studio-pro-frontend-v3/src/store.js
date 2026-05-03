@@ -12,11 +12,11 @@ const defaultAgentSwitches = {
 };
 
 const defaultModelRoutes = [
-  { task: '大纲补全', model: 'deepseek-reasoner', temperature: 0.6, maxOutputTokens: 12000, fallback: 'deepseek-chat' },
-  { task: '章节导演', model: 'deepseek-chat', temperature: 0.5, maxOutputTokens: 6000, fallback: 'deepseek-fast' },
-  { task: '正文写作', model: 'deepseek-chat', temperature: 0.9, maxOutputTokens: 16000, fallback: 'deepseek-chat' },
-  { task: '连续性检查', model: 'deepseek-reasoner', temperature: 0.2, maxOutputTokens: 6000, fallback: 'deepseek-chat' },
-  { task: '状态提取 JSON', model: 'deepseek-chat', temperature: 0.1, maxOutputTokens: 5000, fallback: 'deepseek-fast' }
+  { task: '大纲补全', model: 'deepseek-v4-pro', temperature: 0.6, maxOutputTokens: 12000, fallback: 'deepseek-v4-flash' },
+  { task: '章节导演', model: 'deepseek-v4-flash', temperature: 0.5, maxOutputTokens: 6000, fallback: 'deepseek-v4-flash' },
+  { task: '正文写作', model: 'deepseek-v4-flash', temperature: 0.9, maxOutputTokens: 16000, fallback: 'deepseek-v4-flash' },
+  { task: '连续性检查', model: 'deepseek-v4-pro', temperature: 0.2, maxOutputTokens: 6000, fallback: 'deepseek-v4-flash' },
+  { task: '状态提取 JSON', model: 'deepseek-v4-flash', temperature: 0.1, maxOutputTokens: 5000, fallback: 'deepseek-v4-flash' }
 ];
 
 const defaultSettings = {
@@ -33,15 +33,15 @@ const defaultSettings = {
   maxOutputTokens: 12000,
   temperatureWriting: 0.9,
   temperatureReview: 0.2,
-  writingModel: 'deepseek-chat',
-  reviewModel: 'deepseek-reasoner',
-  fallbackModel: 'deepseek-chat',
+  writingModel: 'deepseek-v4-flash',
+  reviewModel: 'deepseek-v4-pro',
+  fallbackModel: 'deepseek-v4-flash',
   embeddingModel: 'BAAI/bge-m3',
   modelRoutes: defaultModelRoutes,
   agentSwitches: defaultAgentSwitches,
   deepseekBaseUrl: 'https://api.deepseek.com',
-  deepseekMainModel: 'deepseek-chat',
-  deepseekFastModel: 'deepseek-chat',
+  deepseekMainModel: 'deepseek-v4-flash',
+  deepseekFastModel: 'deepseek-v4-flash',
   deepseekApiKeySet: false,
   streaming: true
 };

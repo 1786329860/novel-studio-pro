@@ -509,16 +509,16 @@ function renderModelConfigPage(state) {
 }
 
 function modelOptions(selected) {
-  return ['deepseek-chat', 'deepseek-reasoner', 'deepseek-fast', 'qwen-long', 'gpt-5.1', 'gemini-pro', 'claude-sonnet', 'custom'].map((m) => `<option value="${m}" ${selected === m ? 'selected' : ''}>${m}</option>`).join('');
+  return ['deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash', 'qwen-long', 'gpt-5.1', 'gemini-pro', 'claude-sonnet', 'custom'].map((m) => `<option value="${m}" ${selected === m ? 'selected' : ''}>${m}</option>`).join('');
 }
 
 function defaultModelRoutes() {
   return [
-    { task: '大纲补全', model: 'deepseek-reasoner', temperature: 0.6, maxOutputTokens: 12000, fallback: 'deepseek-chat' },
-    { task: '章节导演', model: 'deepseek-chat', temperature: 0.5, maxOutputTokens: 6000, fallback: 'deepseek-fast' },
-    { task: '正文写作', model: 'deepseek-chat', temperature: 0.9, maxOutputTokens: 16000, fallback: 'deepseek-chat' },
-    { task: '连续性检查', model: 'deepseek-reasoner', temperature: 0.2, maxOutputTokens: 6000, fallback: 'deepseek-chat' },
-    { task: '状态提取 JSON', model: 'deepseek-chat', temperature: 0.1, maxOutputTokens: 5000, fallback: 'deepseek-fast' }
+    { task: '大纲补全', model: 'deepseek-v4-pro', temperature: 0.6, maxOutputTokens: 12000, fallback: 'deepseek-v4-flash' },
+    { task: '章节导演', model: 'deepseek-v4-flash', temperature: 0.5, maxOutputTokens: 6000, fallback: 'deepseek-v4-flash' },
+    { task: '正文写作', model: 'deepseek-v4-flash', temperature: 0.9, maxOutputTokens: 16000, fallback: 'deepseek-v4-flash' },
+    { task: '连续性检查', model: 'deepseek-v4-pro', temperature: 0.2, maxOutputTokens: 6000, fallback: 'deepseek-v4-flash' },
+    { task: '状态提取 JSON', model: 'deepseek-v4-flash', temperature: 0.1, maxOutputTokens: 5000, fallback: 'deepseek-v4-flash' }
   ];
 }
 
@@ -864,9 +864,9 @@ app.addEventListener('submit', async (event) => {
   if (form.id === 'model-settings-form') {
     const data = new FormData(form);
     setSettings({
-      writingModel: String(data.get('writingModel') || 'deepseek-chat'),
-      reviewModel: String(data.get('reviewModel') || 'deepseek-reasoner'),
-      fallbackModel: String(data.get('fallbackModel') || 'deepseek-chat'),
+      writingModel: String(data.get('writingModel') || 'deepseek-v4-flash'),
+      reviewModel: String(data.get('reviewModel') || 'deepseek-v4-pro'),
+      fallbackModel: String(data.get('fallbackModel') || 'deepseek-v4-flash'),
       embeddingModel: String(data.get('embeddingModel') || 'BAAI/bge-m3'),
       temperatureWriting: Number(data.get('temperatureWriting') || 0.9),
       temperatureReview: Number(data.get('temperatureReview') || 0.2)
@@ -880,8 +880,8 @@ app.addEventListener('submit', async (event) => {
     setSettings({
       backendBaseUrl: String(data.get('backendBaseUrl') || 'http://127.0.0.1:8765'),
       deepseekBaseUrl: String(data.get('deepseekBaseUrl') || 'https://api.deepseek.com'),
-      deepseekMainModel: String(data.get('deepseekMainModel') || 'deepseek-chat'),
-      deepseekFastModel: String(data.get('deepseekFastModel') || 'deepseek-chat'),
+      deepseekMainModel: String(data.get('deepseekMainModel') || 'deepseek-v4-flash'),
+      deepseekFastModel: String(data.get('deepseekFastModel') || 'deepseek-v4-flash'),
       requestTimeoutMs: Number(data.get('requestTimeoutMs') || 120000),
       retryTimes: Number(data.get('retryTimes') || 1),
       streaming: data.get('streaming') === 'true',

@@ -36,8 +36,9 @@ class AppConfig:
     use_deepseek: bool = _bool(os.getenv("USE_DEEPSEEK"), False)
     deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
     deepseek_base_url: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-    deepseek_main_model: str = os.getenv("DEEPSEEK_MAIN_MODEL", "deepseek-chat")
-    deepseek_fast_model: str = os.getenv("DEEPSEEK_FAST_MODEL", "deepseek-chat")
+    deepseek_main_model: str = os.getenv("DEEPSEEK_MAIN_MODEL", "deepseek-v4-flash")
+    deepseek_plan_model: str = os.getenv("DEEPSEEK_PLAN_MODEL", "deepseek-v4-pro")
+    deepseek_fast_model: str = os.getenv("DEEPSEEK_FAST_MODEL", "deepseek-v4-flash")
 
     request_timeout_seconds: int = _int(os.getenv("REQUEST_TIMEOUT_SECONDS"), 180)
     retry_times: int = _int(os.getenv("RETRY_TIMES"), 2)
