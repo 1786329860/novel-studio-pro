@@ -1,5 +1,5 @@
 import { api, toUserError } from './api.js';
-import { getState, setActiveRoute, setSettings, resetDemoData, subscribe, setViewingChapterIndex, setCurrentProject, updateProject, updateState, setPendingChapter } from './store.js';
+import { getState, setActiveRoute, setSettings, resetDemoData, subscribe, setViewingChapterIndex, setCurrentProject, updateProject, updateState, setPendingChapter, deleteProject } from './store.js';
 
 const app = document.querySelector('#app');
 let busyText = '';
@@ -113,7 +113,7 @@ function renderSidebar(state, project) {
 }
 
 function renderTopbar(state, project) {
-  const projectListHtml = state.projects.length > 1 ? `<div class="project-dropdown" id="project-dropdown">${state.projects.map((p) => `<div class="project-dropdown-item ${p.id === state.currentProjectId ? 'active' : ''}" data-action="switchProject" data-project-id="${escapeHtml(p.id)}">${p.id === state.currentProjectId ? '<span class="check-mark">✓</span>' : '<span class="check-mark"></span>'}<div class="dropdown-item-info"><b>${escapeHtml(p.title || '未命名项目')}</b><small>${p.chapters ? p.chapters.length : 0} 章</small></div></div>`).join('')}</div>` : '';
+  const projectListHtml = state.projects.length > 1 ? `<div class="project-dropdown" id="project-dropdown">${state.projects.map((p) => `<div class="project-dropdown-item ${p.id === state.currentProjectId ? 'active' : ''}" data-action="switchProject" data-project-id="${escapeHtml(p.id)}">${p.id === state.currentProjectId ? '<span class="check-mark">✓</span>' : '<span class="check-mark"></span>'}<div class="dropdown-item-info"><b>${escapeHtml(p.title || '未命名项目')}</b><small>${p.chapters ? p.chapters.length : 0} 章</small></div><button class="dropdown-delete-btn" data-action="deleteProject" data-project-id="${escapeHtml(p.id)}" title="删除项目">×</button></div>`).join('')}</div>` : '';
   return `
     <header class="topbar">
       <div class="project-select-wrapper"><div class="project-select" data-action="showProjectList">当前项目：<b>${escapeHtml(project?.title || '未命名项目')}</b><span>⌄</span></div>${projectListHtml}</div>
@@ -785,6 +785,20 @@ app.addEventListener('click', async (event) => {
     if (projectId) {
       setCurrentProject(projectId);
       showToast('已切换项目。');
+    }
+  }
+
+  if (action === 'deleteProject') {
+    const projectId = actionButton.dataset.projectId;
+    if (projectId) {
+      event.stopPropagation();
+      const state = getState();
+      const project = state.projects.find((p) => p.id === projectId);
+      const title = project ? project.title || '未命名项目' : '该项目';
+      if (confirm(`确定要删除《${title}》吗？此操作不可撤销。`)) {
+        deleteProject(projectId);
+        showToast('项目已删除。');
+      }
     }
   }
 });

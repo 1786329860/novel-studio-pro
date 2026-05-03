@@ -174,4 +174,17 @@ export function setPendingChapter(chapter) {
   });
 }
 
+export function deleteProject(projectId) {
+  return updateState((state) => {
+    state.projects = state.projects.filter((p) => p.id !== projectId);
+    if (state.currentProjectId === projectId) {
+      state.currentProjectId = state.projects.length > 0 ? state.projects[0].id : null;
+      state.activeRoute = state.projects.length > 0 ? 'blueprint' : 'create';
+      state.pendingChapter = null;
+      state.viewingChapterIndex = -1;
+    }
+    return state;
+  });
+}
+
 export { defaultSettings, defaultState };

@@ -1646,6 +1646,28 @@ td {
   background: linear-gradient(135deg, rgba(255, 128, 157, 0.12), rgba(169, 101, 255, 0.08));
 }
 
+.dropdown-delete-btn {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: 0.15s ease;
+}
+
+.dropdown-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
 .check-mark {
   width: 18px;
   text-align: center;
