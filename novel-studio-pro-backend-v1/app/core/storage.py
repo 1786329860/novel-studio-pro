@@ -152,6 +152,7 @@ class SQLiteStore:
         self._db = Database(db_path)
         self._json_store = JsonStore()  # 保留用于数据迁移
         self._migrated = False
+        self.lock = threading.RLock()
 
     def _ensure_migration(self) -> None:
         """确保旧 JSON 数据已迁移到 SQLite。"""
@@ -217,10 +218,11 @@ class SQLiteStore:
 
     def update(self, mutator) -> dict[str, Any]:
         """原子更新：读取 -> 执行 mutator -> 写入。"""
-        data = self.read()
-        result = mutator(data)
-        self.write(data)
-        return result
+        with self.lock:
+            data = self.read()
+            result = mutator(data)
+            self.write(data)
+            return result
 
 
 def migrate_from_json(json_path: str | Path) -> None:

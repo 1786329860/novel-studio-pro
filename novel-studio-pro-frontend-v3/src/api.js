@@ -24,7 +24,9 @@ async function request(path, options = {}) {
     });
 
     const text = await response.text();
-    const data = text ? JSON.parse(text) : {};
+    let data;
+    try { data = text ? JSON.parse(text) : {}; }
+    catch { data = {}; if (text) throw new Error(`服务器返回了非 JSON 数据: ${text.slice(0, 100)}`); }
 
     if (!response.ok) {
       const message = data.detail || data.message || `HTTP ${response.status}`;
@@ -197,7 +199,9 @@ export const api = {
 
     if (!response.ok) {
       const text = await response.text();
-      const data = text ? JSON.parse(text) : {};
+      let data;
+      try { data = text ? JSON.parse(text) : {}; }
+      catch { data = {}; if (text) throw new Error(`服务器返回了非 JSON 数据: ${text.slice(0, 100)}`); }
       throw new Error(data.detail || data.message || `HTTP ${response.status}`);
     }
 

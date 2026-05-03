@@ -100,6 +100,22 @@ class TaskQueue:
         self._tasks: dict[str, Task] = {}
         self._lock = asyncio.Lock()
 
+    def _cleanup_old_tasks(self) -> None:
+        """清理已完成/失败/取消的旧任务，保留最近 50 个。"""
+        finished_tasks = [
+            tid for tid, t in self._tasks.items()
+            if t.status in ("done", "failed", "cancelled")
+        ]
+        if len(finished_tasks) <= 50:
+            return
+        # 按完成时间排序（无 finished_at 的排在前面）
+        finished_tasks.sort(
+            key=lambda tid: self._tasks[tid].finished_at or "",
+        )
+        # 删除超出 50 个的最早任务
+        for tid in finished_tasks[:-50]:
+            del self._tasks[tid]
+
     async def submit(
         self,
         task_type: str,
@@ -117,6 +133,8 @@ class TaskQueue:
             task_id
         """
         task = Task(task_type, params)
+
+        self._cleanup_old_tasks()
 
         async with self._lock:
             self._tasks[task.id] = task

@@ -176,7 +176,6 @@ class ProjectService:
                     if new_delta:
                         # 使用 StateMerger 验证新的 state_delta
                         try:
-                            from app.services.agents import StateMerger
                             merger = StateMerger()
                             _, _ = merger.validate_and_merge(project, new_delta)
                             # 合并新的 delta 到原有 delta

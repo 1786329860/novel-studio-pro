@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.schemas import CreateProjectRequest, GenerateChapterRequest
@@ -72,7 +72,7 @@ async def generate_next_chapter(project_id: str, payload: GenerateChapterRequest
 
     # 模式 1: SSE 流式响应（向后兼容）
     if "text/event-stream" in accept:
-        return await _generate_next_chapter_stream(project_id, payload.model_dump())
+        return await _generate_next_chapter_stream(project_id, payload.model_dump(), request)
 
     # 模式 2: 任务队列模式
     from app.core.task_queue import task_queue
@@ -234,6 +234,7 @@ async def generate_next_chapter(project_id: str, payload: GenerateChapterRequest
 async def _generate_next_chapter_stream(
     project_id: str,
     options: dict,
+    request: Request,
 ) -> StreamingResponse:
     """SSE 流式生成下一章。"""
 
@@ -242,6 +243,8 @@ async def _generate_next_chapter_stream(
 
         try:
             async for event in gen_stream(project_id, options):
+                if await request.is_disconnected():
+                    break
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as exc:
             logger.error("[Stream] 章节生成流式错误: %s", exc)
@@ -314,7 +317,7 @@ async def get_task_status(task_id: str):
 
     status = await task_queue.get_status(task_id)
     if not status:
-        return {"error": "任务不存在"}, 404
+        return JSONResponse(status_code=404, content={"detail": "任务不存在"})
     return status
 
 
@@ -334,5 +337,5 @@ async def cancel_task(task_id: str):
 
     success = await task_queue.cancel(task_id)
     if not success:
-        return {"error": "任务不存在或已完成，无法取消"}, 400
+        return JSONResponse(status_code=400, content={"detail": "任务不存在或已完成，无法取消"})
     return {"taskId": task_id, "status": "cancelled", "message": "任务已取消"}

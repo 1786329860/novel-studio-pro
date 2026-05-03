@@ -308,8 +308,8 @@ def build_mock_chapter(project: dict[str, Any], options: dict[str, Any]) -> dict
     chapters = project.get("chapters", [])
     number = len(chapters) + 1
     title = chapter_title(number)
-    if project.get("chapterTitlePreview"):
-        title = project["chapterTitlePreview"][number - 1].get("title", title)
+    preview = project.get("chapterTitlePreview", [])
+    title = preview[number - 1].get("title", title) if number - 1 < len(preview) else title
 
     protagonist = next((c for c in project.get("characters", []) if c.get("id") == "char_protagonist"), {"name": "江离"})
     female = next((c for c in project.get("characters", []) if c.get("id") == "char_female_lead"), {"name": "沈烬"})
@@ -584,8 +584,8 @@ async def _run_full_pipeline(
     chapters = project.get("chapters", [])
     number = len(chapters) + 1
     title = chapter_title(number)
-    if project.get("chapterTitlePreview"):
-        title = project["chapterTitlePreview"][number - 1].get("title", title)
+    preview = project.get("chapterTitlePreview", [])
+    title = preview[number - 1].get("title", title) if number - 1 < len(preview) else title
     # 如果导演稿中有更合适的标题，优先使用
     if director_plan.get("chapter_goal"):
         # 保留默认标题，但可以将 goal 作为补充信息
@@ -688,22 +688,47 @@ async def generate_next_chapter_stream(
         rewrite_options = dict(options)
 
         for attempt in range(max_rewrites + 1):
-            # 步骤 1: 约束生成
-            yield {"type": "agent_start", "agent": "constraint"}
+            # 步骤 1: 记忆检索
+            yield {"type": "agent_start", "agent": "memory"}
             context_builder = ContextBuilder()
+            memory_ctx = context_builder.build_constraint_context(project)
+            memory_ctx["project"] = project
+            memory_ctx["taskDescription"] = "生成下一章"
+            memory_result = await MemoryAgent().run(memory_ctx)
+            yield {"type": "agent_done", "agent": "memory", "result": memory_result}
+
+            # 步骤 2: 伏笔规划
+            yield {"type": "agent_start", "agent": "foreshadow"}
+            foreshadow_ctx = context_builder.build_constraint_context(project)
+            foreshadow_ctx["project"] = project
+            foreshadow_result = await ForeshadowAgent().run(foreshadow_ctx)
+            yield {"type": "agent_done", "agent": "foreshadow", "result": foreshadow_result}
+
+            # 步骤 3: 约束生成（使用伏笔规划结果）
+            yield {"type": "agent_start", "agent": "constraint"}
             constraint_ctx = context_builder.build_constraint_context(project)
             constraint_ctx["project"] = project
+            constraint_ctx["foreshadow_plan"] = foreshadow_result.get("foreshadow_plan", [])
             constraints = await ConstraintAgent().run(constraint_ctx)
             yield {"type": "agent_done", "agent": "constraint", "result": constraints}
 
-            # 步骤 2: 导演稿生成
+            # 步骤 4: 角色戏份规划
+            yield {"type": "agent_start", "agent": "character_director"}
+            char_director_ctx = context_builder.build_director_context(project, constraints)
+            char_director_ctx["project"] = project
+            char_director_ctx["constraints"] = constraints
+            char_plan = await CharacterDirectorAgent().run(char_director_ctx)
+            yield {"type": "agent_done", "agent": "character_director", "result": char_plan}
+
+            # 步骤 5: 导演稿生成（使用角色规划结果）
             yield {"type": "agent_start", "agent": "director"}
             director_ctx = context_builder.build_director_context(project, constraints)
             director_ctx["project"] = project
+            director_ctx["character_plan"] = char_plan.get("character_plan", {})
             director_plan = await DirectorAgent().run(director_ctx)
             yield {"type": "agent_done", "agent": "director", "result": director_plan}
 
-            # 步骤 3: 正文写作（流式）
+            # 步骤 6: 正文写作（流式）
             yield {"type": "agent_start", "agent": "writer"}
             writer_ctx = context_builder.build_writer_context(project, constraints, director_plan)
             writer_ctx["project"] = project
@@ -782,8 +807,8 @@ async def generate_next_chapter_stream(
             chapters = project.get("chapters", [])
             number = len(chapters) + 1
             title = chapter_title(number)
-            if project.get("chapterTitlePreview"):
-                title = project["chapterTitlePreview"][number - 1].get("title", title)
+            preview = project.get("chapterTitlePreview", [])
+            title = preview[number - 1].get("title", title) if number - 1 < len(preview) else title
 
             chapter = {
                 "id": make_id("chapter"),

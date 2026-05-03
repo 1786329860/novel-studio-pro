@@ -183,6 +183,7 @@ class DeepSeekClient:
 
         last_error: Exception | None = None
         started = time.perf_counter()
+        has_yielded = False
 
         for attempt in range(retry_times + 1):
             try:
@@ -216,12 +217,14 @@ class DeepSeekClient:
                                     if json_mode:
                                         full_content += text
                                     else:
+                                        has_yielded = True
                                         yield text
                             except json.JSONDecodeError:
                                 continue
 
                         # JSON 模式：yield 完整累积的 JSON
                         if json_mode and full_content:
+                            has_yielded = True
                             yield full_content
 
                 elapsed_ms = int((time.perf_counter() - started) * 1000)
@@ -238,6 +241,9 @@ class DeepSeekClient:
                 return  # 成功完成
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
+                if has_yielded:
+                    # 已经开始向客户端发送数据，不再重试
+                    raise
                 if attempt < retry_times:
                     await asyncio.sleep(1.2 + attempt * 1.8)
 

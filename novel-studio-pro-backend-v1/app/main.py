@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -26,7 +28,6 @@ else:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins_list,
-    allow_origin_regex=r".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -55,10 +56,12 @@ def root():
 
 @app.get("/api/health")
 def health():
-    return {
+    result: dict[str, Any] = {
         "ok": True,
         "host": config.app_host,
         "port": config.app_port,
-        "dataDir": str(config.data_dir),
         "message": "后端运行正常。",
     }
+    if config.debug:
+        result["dataDir"] = str(config.data_dir)
+    return result
