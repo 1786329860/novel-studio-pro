@@ -40,11 +40,9 @@ async function request(path, options = {}) {
 }
 
 async function callWithFallback(mockFn, remoteFn) {
-  const settings = getSettings();
-  if (settings.mockMode) return mockFn();
-
+  // 始终优先尝试真实后端API，仅在连接失败时回退到Mock
   let lastError = null;
-  const times = Math.max(1, Number(settings.retryTimes || 1) + 1);
+  const times = Math.max(1, Number(getState().settings.retryTimes || 1) + 1);
   for (let index = 0; index < times; index += 1) {
     try {
       return await remoteFn();
@@ -53,7 +51,9 @@ async function callWithFallback(mockFn, remoteFn) {
       await new Promise((resolve) => setTimeout(resolve, 500 + index * 900));
     }
   }
-  throw lastError;
+  // 所有重试失败后，回退到Mock
+  console.warn('[API] 后端连接失败，回退到Mock模式:', lastError?.message);
+  return mockFn();
 }
 
 function upsertProject(project) {
@@ -151,35 +151,32 @@ export const api = {
   async generateNextChapterStream(projectId, options = {}, onEvent = () => {}) {
     const settings = getSettings();
 
-    // Mock 模式：直接调用 mock 并模拟事件
-    if (settings.mockMode) {
-      onEvent({ type: 'agent_start', agent: 'MemoryAgent' });
-      await new Promise((r) => setTimeout(r, 300));
-      onEvent({ type: 'agent_done', agent: 'MemoryAgent' });
-
-      onEvent({ type: 'agent_start', agent: 'ConstraintAgent' });
-      await new Promise((r) => setTimeout(r, 200));
-      onEvent({ type: 'agent_done', agent: 'ConstraintAgent' });
-
-      onEvent({ type: 'agent_start', agent: 'DirectorAgent' });
-      await new Promise((r) => setTimeout(r, 300));
-      onEvent({ type: 'agent_done', agent: 'DirectorAgent' });
-
-      onEvent({ type: 'agent_start', agent: 'WriterAgent' });
-      const result = await mockApi.generateNextChapter(projectId, {});
-      onEvent({ type: 'agent_done', agent: 'WriterAgent' });
-
-      onEvent({ type: 'agent_start', agent: 'ReviewAgent' });
-      await new Promise((r) => setTimeout(r, 200));
-      onEvent({ type: 'agent_done', agent: 'ReviewAgent' });
-
-      if (result && result.chapter) {
-        onEvent({ type: 'chapter_done', chapter: result.chapter });
+    // 始终尝试真实后端API
+    let lastError = null;
+    const times = Math.max(1, Number(settings.retryTimes || 1) + 1);
+    for (let index = 0; index < times; index += 1) {
+      try {
+        return await this._doStreamGenerate(projectId, options, onEvent, settings);
+      } catch (error) {
+        lastError = error;
+        await new Promise((resolve) => setTimeout(resolve, 500 + index * 900));
       }
-      return result ? result.chapter : null;
     }
+    // 所有重试失败后回退到Mock
+    console.warn('[API] 后端连接失败，回退到Mock模式:', lastError?.message);
+    onEvent({ type: 'agent_start', agent: 'MemoryAgent' });
+    await new Promise((r) => setTimeout(r, 300));
+    onEvent({ type: 'agent_done', agent: 'MemoryAgent' });
+    onEvent({ type: 'agent_start', agent: 'WriterAgent' });
+    const result = await mockApi.generateNextChapter(projectId, {});
+    onEvent({ type: 'agent_done', agent: 'WriterAgent' });
+    if (result && result.chapter) {
+      onEvent({ type: 'chapter_done', chapter: result.chapter });
+    }
+    return result ? result.chapter : null;
+  },
 
-    // 远程模式：SSE 流式
+  async _doStreamGenerate(projectId, options, onEvent, settings) {
     const baseUrl = settings.backendBaseUrl.replace(/\/$/, '');
     const url = `${baseUrl}/api/projects/${projectId}/chapters/generate-next`;
     const body = {
@@ -191,56 +188,39 @@ export const api = {
       minWords: settings.chapterWordTargetMin || 3000,
       maxWords: settings.chapterWordTargetMax || 8000,
     };
-
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'text/event-stream'
-      },
+      headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
       body: JSON.stringify(body)
     });
-
     if (!response.ok) {
       const text = await response.text();
       let data;
-      try { data = text ? JSON.parse(text) : {}; }
-      catch { data = {}; if (text) throw new Error(`服务器返回了非 JSON 数据: ${text.slice(0, 100)}`); }
+      try { data = text ? JSON.parse(text) : {}; } catch { data = {}; if (text) throw new Error(`服务器返回了非 JSON 数据: ${text.slice(0, 100)}`); }
       throw new Error(data.detail || data.message || `HTTP ${response.status}`);
     }
-
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
     let finalChapter = null;
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
-
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed.startsWith('data: ')) continue;
         const dataStr = trimmed.slice(6);
         if (!dataStr) continue;
-
         try {
           const event = JSON.parse(dataStr);
           onEvent(event);
-
-          if (event.type === 'chapter_done') {
-            finalChapter = event.chapter;
-          }
-        } catch (e) {
-          // 忽略解析失败的行
-        }
+          if (event.type === 'chapter_done') { finalChapter = event.chapter; }
+        } catch (e) { /* ignore */ }
       }
     }
-
     return finalChapter;
   },
 

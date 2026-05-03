@@ -274,7 +274,7 @@ def build_mock_blueprint(project: dict[str, Any], variant: str = "standard") -> 
 
 async def maybe_deepseek_blueprint(project: dict[str, Any]) -> dict[str, Any] | None:
     generation = settings_service.get_all(safe=False).get("generation", {})
-    if generation.get("mockMode", False) or not deepseek_client.is_ready():
+    if not deepseek_client.is_ready():
         return None
     routes = settings_service.get_all(safe=False).get("modelRoutes", {})
     route = routes.get("outlineExpansion", {})
@@ -301,6 +301,7 @@ async def build_story_blueprint(project: dict[str, Any], variant: str = "standar
     ai_data = await maybe_deepseek_blueprint(project)
     if ai_data:
         return ai_data
+    logger.warning("[Blueprint] DeepSeek 未就绪，使用 Mock 蓝图生成。请检查 .env 中 USE_DEEPSEEK=true 和 DEEPSEEK_API_KEY 是否配置。")
     return build_mock_blueprint(project, variant=variant)
 
 
@@ -387,7 +388,7 @@ def build_mock_chapter(project: dict[str, Any], options: dict[str, Any]) -> dict
 async def maybe_deepseek_chapter(project: dict[str, Any], options: dict[str, Any]) -> dict[str, Any] | None:
     """原有单步 DeepSeek 章节生成（保留向后兼容）。"""
     generation = settings_service.get_all(safe=False).get("generation", {})
-    if generation.get("mockMode", False) or not deepseek_client.is_ready():
+    if not deepseek_client.is_ready():
         return None
     routes = settings_service.get_all(safe=False).get("modelRoutes", {})
     route = routes.get("chapterWriting", {})
