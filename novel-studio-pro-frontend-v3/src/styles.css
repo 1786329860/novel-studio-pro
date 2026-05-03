@@ -883,9 +883,15 @@ h3 {
 }
 
 .editor-card {
-  padding: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   min-height: 0;
+  max-height: calc(100vh - 120px);
 }
 
 .chapter-head {
@@ -921,6 +927,22 @@ h3 {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  max-height: calc(100vh - 320px);
+}
+
+.novel-text::-webkit-scrollbar {
+  width: 6px;
+}
+.novel-text::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.04);
+  border-radius: 3px;
+}
+.novel-text::-webkit-scrollbar-thumb {
+  background: rgba(156, 106, 222, 0.35);
+  border-radius: 3px;
+}
+.novel-text::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 106, 222, 0.55);
 }
 
 .novel-text p {

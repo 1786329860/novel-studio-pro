@@ -701,7 +701,13 @@ async def _run_full_pipeline(
 
     # 步骤 6: 正文写作
     logger.info("[Pipeline] 步骤 6/9: 正文写作...")
-    writer_ctx = context_builder.build_writer_context(project, constraints, director_plan)
+    target_total_words = options.get("maxWords", 5000)
+    min_words = options.get("minWords", 3000)
+    writer_ctx = context_builder.build_writer_context(
+        project, constraints, director_plan,
+        target_total_words=target_total_words,
+        min_words=min_words,
+    )
     writer_ctx["project"] = project
 
     # 分场景生成判断：如果导演稿有 3+ 个场景，使用分场景生成
@@ -713,7 +719,7 @@ async def _run_full_pipeline(
         )
         writer_agent = WriterAgent()
         chapter_text = await writer_agent.write_by_scene(
-            writer_ctx, scenes, target_total_words=options.get("maxWords", 5000)
+            writer_ctx, scenes, target_total_words=target_total_words
         )
     else:
         # 1-2 个场景，使用整章生成（原有逻辑）
@@ -868,6 +874,27 @@ async def generate_next_chapter_stream(
         chapter = None
         rewrite_options = dict(options)
 
+        # If rewriting, include previous review feedback
+        rewrite_chapter = options.get("rewriteChapterNumber")
+        if rewrite_chapter:
+            prev_chapters = project.get("chapters", [])
+            prev = next((c for c in prev_chapters if c.get("number") == rewrite_chapter), None)
+            if prev and prev.get("review"):
+                review = prev["review"]
+                feedback_parts = []
+                if review.get("totalScore") and review["totalScore"] < 85:
+                    feedback_parts.append(f"上次质量评分仅 {review['totalScore']}/100，未达标。")
+                failed_tests = [t for t in review.get("tests", []) if not t.get("passed")]
+                if failed_tests:
+                    feedback_parts.append("上次未通过的检查项：" + "；".join(
+                        f"{t.get('name', '?')}（{t.get('score', 0)}分：{t.get('note', t.get('message', ''))})"
+                        for t in failed_tests
+                    ))
+                if feedback_parts:
+                    rewrite_options["userInstruction"] = (options.get("userInstruction", "") +
+                        "\n\n【重写改进要求】" + "；".join(feedback_parts) +
+                        " 请针对以上问题进行改进。")
+
         for attempt in range(max_rewrites + 1):
             # 步骤 1: 记忆检索
             yield {"type": "agent_start", "agent": "memory"}
@@ -911,7 +938,13 @@ async def generate_next_chapter_stream(
 
             # 步骤 6: 正文写作（流式）
             yield {"type": "agent_start", "agent": "writer"}
-            writer_ctx = context_builder.build_writer_context(project, constraints, director_plan)
+            stream_target_total_words = rewrite_options.get("maxWords", 5000)
+            stream_min_words = rewrite_options.get("minWords", 3000)
+            writer_ctx = context_builder.build_writer_context(
+                project, constraints, director_plan,
+                target_total_words=stream_target_total_words,
+                min_words=stream_min_words,
+            )
             writer_ctx["project"] = project
             chapter_text = None
 
@@ -926,7 +959,7 @@ async def generate_next_chapter_stream(
                 }
                 writer_agent = WriterAgent()
                 async for event in writer_agent.write_by_scene_stream(
-                    writer_ctx, stream_scenes, target_total_words=options.get("maxWords", 5000)
+                    writer_ctx, stream_scenes, target_total_words=stream_target_total_words
                 ):
                     if event.get("type") == "scene_start":
                         yield {

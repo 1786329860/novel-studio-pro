@@ -71,7 +71,7 @@ class WriterAgent(BaseAgent):
             "你必须输出严格 JSON，不要写任何解释文字。\n"
             "JSON 结构如下：\n"
             "{\n"
-            '  "text": "正文内容（3000-8000字）",\n'
+            '  "text": "正文内容",\n'
             '  "word_count": 5000,\n'
             '  "dialogue_ratio": 0.3,\n'
             '  "narrative_style": "第三人称有限视角"\n'
@@ -89,7 +89,8 @@ class WriterAgent(BaseAgent):
             "10. 绝对避免 AI 味重的表达（如'不禁'、'竟然'、'仿佛'等过度使用）\n"
             "11. 每个场景之间要有自然的过渡\n"
             "12. 最后一个场景的结尾要有钩子\n"
-            "13. 字数控制在 3000-8000 字之间\n"
+            f"13. 目标字数：{context.get('target_total_words', 5000)} 字"
+            f"（严格控制在 {context.get('min_words', 3000)}-{context.get('target_total_words', 5000)} 字范围内）\n"
             "14. 对话占比控制在 20%-40% 之间"
         )
 
