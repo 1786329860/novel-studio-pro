@@ -20,19 +20,99 @@ def build_outline_expansion_prompt(project: dict[str, Any]) -> list[dict[str, st
         {
             "role": "system",
             "content": (
-                "你是强自动化长篇小说创作引擎的故事蓝图 Agent。"
-                "用户只提供小说名和粗略大纲，你必须自动生成完整故事蓝图。"
-                "必须输出严格 JSON，不要写解释。"
+                "你是强自动化长篇小说创作引擎的故事蓝图 Agent。\n"
+                "用户只提供小说名和粗略大纲，你必须自动生成完整故事蓝图。\n"
+                "你必须输出严格 JSON，不要写任何解释文字。\n\n"
+                "## JSON 结构要求\n\n"
+                "{\n"
+                '  "storyBible": {\n'
+                '    "corePremise": "核心命题（50-100字，故事的核心主题和哲学思考）",\n'
+                '    "mainTheme": "主题（20-40字）",\n'
+                '    "mainConflict": "主线冲突（50-100字，核心矛盾和冲突）",\n'
+                '    "endingDirection": "结局方向（30-60字，预期的结局走向）",\n'
+                '    "style": "写作风格描述（20-40字）",\n'
+                '    "genre": "题材类型",\n'
+                '    "forbiddenRules": ["禁止提前揭露的规则1", "规则2", "规则3"],\n'
+                '    "styleProfile": "文风画像（30-60字，描述叙事风格、语言特点）"\n'
+                "  },\n\n"
+                '  "volumePlan": [\n'
+                '    {"name": "卷名", "range": "1-20章", "objective": "本卷目标（30-50字）", "turningPoint": "本卷转折点（30-50字）", "tone": "基调", "status": "planned", "coverGradient": "linear-gradient(135deg, #667eea, #764ba2)"}\n'
+                "  ],\n\n"
+                '  "stagePlan": [\n'
+                '    {"name": "阶段名", "chapterRange": "1-10章", "description": "阶段描述（20-40字）", "keyEvents": "关键事件描述"}\n'
+                "  ],\n\n"
+                '  "chapterTitlePreview": [\n'
+                '    {"number": 1, "title": "章节标题（6-12字）"}\n'
+                "  ],\n\n"
+                '  "characters": [\n'
+                '    {\n'
+                '      "id": "char_1",\n'
+                '      "name": "角色全名",\n'
+                '      "role": "主角/女主/男主/反派/配角/导师",\n'
+                '      "personality": "性格描述（30-60字）",\n'
+                '      "background": "背景故事（50-100字）",\n'
+                '      "currentGoal": "当前目标（20-40字）",\n'
+                '      "hiddenGoal": "隐藏目标（20-40字，可选）",\n'
+                '      "emotion": "当前情绪",\n'
+                '      "agencyScore": 0.7,\n'
+                '      "dropoutRisk": 0.2,\n'
+                '      "speakingStyle": "说话风格（20-40字）",\n'
+                '      "lastAppearedChapter": 0,\n'
+                '      "knowledgeState": ["已知信息1", "已知信息2"]\n'
+                "    }\n"
+                "  ],\n\n"
+                '  "relationships": [\n'
+                '    {"from": "角色A", "to": "角色B", "type": "关系类型（如：恋人/对手/师徒/朋友）", "description": "关系描述（20-40字）", "trust": 50, "tension": 30, "tone": "pink/blue/orange/mint"}\n'
+                "  ],\n\n"
+                '  "foreshadows": [\n'
+                '    {\n'
+                '      "id": "fs_1",\n'
+                '      "name": "伏笔名称（10-20字）",\n'
+                '      "description": "伏笔描述（30-60字）",\n'
+                '      "status": "planted",\n'
+                '      "plantedChapter": 1,\n'
+                '      "lastMentionedChapter": 1,\n'
+                '      "plannedPayoffChapter": 30,\n'
+                '      "importance": "high",\n'
+                '      "risk": 0.3,\n'
+                '      "nextAction": "下一步处理建议"\n'
+                "    }\n"
+                "  ],\n\n"
+                '  "truthSource": {\n'
+                '    "ultimateTruth": "最终真相（50-100字）",\n'
+                '    "revealPace": "揭示节奏描述",\n'
+                '    "forbiddenReveals": ["禁止提前揭露的内容1", "内容2"]\n'
+                "  },\n\n"
+                '  "status": {\n'
+                '    "mainProgress": 0,\n'
+                '    "qualityScore": 85,\n'
+                '    "deviationRisk": 0.1,\n'
+                '    "dropoutRisk": 0.1,\n'
+                '    "tests": []\n'
+                "  },\n\n"
+                '  "memory": {\n'
+                '    "chapterSummaries": [],\n'
+                '    "stateSnapshots": []\n'
+                "  }\n"
+                "}\n\n"
+                "## 关键规则\n"
+                "1. 角色数量根据大纲复杂度决定，至少3个，最多8个\n"
+                "2. 每个角色必须有完整的 personality、background、currentGoal\n"
+                "3. agencyScore 范围 0.0-1.0，dropoutRisk 范围 0.0-1.0\n"
+                "4. 伏笔数量根据大纲复杂度决定，至少3个，最多8个\n"
+                "5. plannedPayoffChapter 必须是具体的数字，不能是 undefined\n"
+                "6. 分卷规划根据 lengthType 决定：short=2-3卷，medium=3-5卷，long=4-6卷\n"
+                "7. chapterTitlePreview 至少生成 20 个章节标题\n"
+                "8. forbiddenRules 至少 3 条\n"
+                "9. 所有描述必须基于用户提供的大纲，不能凭空编造与大纲无关的内容\n"
+                "10. 角色名必须从用户大纲中提取，不能自己创造新角色名（除非大纲需要）"
             ),
         },
         {
             "role": "user",
             "content": (
-                "请根据输入生成完整项目初始化数据。必须包含："
-                "storyBible, volumePlan, stagePlan, chapterTitlePreview, characters, relationships, "
-                "foreshadows, truthSource, status, memory。\n"
-                "输入如下：\n"
-                f"{json.dumps(payload, ensure_ascii=False)}"
+                "请根据以下输入生成完整项目初始化数据。\n\n"
+                f"输入如下：\n{json.dumps(payload, ensure_ascii=False)}"
             ),
         },
     ]
