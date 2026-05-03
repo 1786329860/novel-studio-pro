@@ -334,7 +334,7 @@ export const api = {
    */
   async testConnection() {
     const baseUrl = getSettings().backendBaseUrl.replace(/\/$/, '');
-    const response = await fetch(`${baseUrl}/api/test-connection`);
+    const response = await fetch(`${baseUrl}/api/projects/test-connection`);
     return response.json();
   },
 
@@ -343,7 +343,7 @@ export const api = {
    */
   async testModel(model) {
     const baseUrl = getSettings().backendBaseUrl.replace(/\/$/, '');
-    const response = await fetch(`${baseUrl}/api/test-model`, {
+    const response = await fetch(`${baseUrl}/api/projects/test-model`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model })
@@ -356,7 +356,7 @@ export const api = {
    */
   async testEmbedding() {
     const baseUrl = getSettings().backendBaseUrl.replace(/\/$/, '');
-    const response = await fetch(`${baseUrl}/api/test-embedding`);
+    const response = await fetch(`${baseUrl}/api/projects/test-embedding`);
     return response.json();
   },
 
@@ -365,7 +365,7 @@ export const api = {
    */
   async getRequestLogs(limit = 20) {
     const baseUrl = getSettings().backendBaseUrl.replace(/\/$/, '');
-    const response = await fetch(`${baseUrl}/api/request-logs?limit=${limit}`);
+    const response = await fetch(`${baseUrl}/api/projects/request-logs?limit=${limit}`);
     return response.json();
   },
 

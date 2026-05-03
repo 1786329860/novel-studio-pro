@@ -1113,7 +1113,7 @@ app.addEventListener('click', async (event) => {
     runTask('正在测试模型连通性...', async () => {
       const settings = getSettings();
       const baseUrl = settings.backendBaseUrl.replace(/\/$/, '');
-      const resp = await fetch(`${baseUrl}/api/test-model`, {
+      const resp = await fetch(`${baseUrl}/api/projects/test-model`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: settings.writingModel })
@@ -1122,7 +1122,7 @@ app.addEventListener('click', async (event) => {
       if (data.ok) {
         showToast(`模型 ${data.model} 连通正常`);
       } else {
-        showToast(`模型测试失败: ${data.message}`, 'error');
+        showToast(`模型测试失败: ${data.detail || data.message || '未知错误'}`, 'error');
       }
     });
   }
@@ -1145,12 +1145,12 @@ app.addEventListener('click', async (event) => {
     runTask('正在测试连接...', async () => {
       const settings = getSettings();
       const baseUrl = settings.backendBaseUrl.replace(/\/$/, '');
-      const resp = await fetch(`${baseUrl}/api/test-connection`);
+      const resp = await fetch(`${baseUrl}/api/projects/test-connection`);
       const data = await resp.json();
       if (data.ok) {
         showToast(`连接成功: ${data.message}`);
       } else {
-        showToast(`连接失败: ${data.message}`, 'error');
+        showToast(`连接失败: ${data.detail || data.message || '未知错误'}`, 'error');
       }
     });
   }
@@ -1159,7 +1159,7 @@ app.addEventListener('click', async (event) => {
     runTask('正在获取请求日志...', async () => {
       const settings = getSettings();
       const baseUrl = settings.backendBaseUrl.replace(/\/$/, '');
-      const resp = await fetch(`${baseUrl}/api/request-logs?limit=20`);
+      const resp = await fetch(`${baseUrl}/api/projects/request-logs?limit=20`);
       const data = await resp.json();
       const logs = data.logs || [];
       if (logs.length === 0) {
@@ -1310,12 +1310,12 @@ app.addEventListener('click', async (event) => {
     runTask('正在测试 Embedding 服务...', async () => {
       const settings = getSettings();
       const baseUrl = settings.backendBaseUrl.replace(/\/$/, '');
-      const resp = await fetch(`${baseUrl}/api/test-embedding`);
+      const resp = await fetch(`${baseUrl}/api/projects/test-embedding`);
       const data = await resp.json();
       if (data.ok) {
         showToast(`Embedding 服务正常，向量维度: ${data.dimension}`);
       } else {
-        showToast(`Embedding 测试失败: ${data.message}`, 'error');
+        showToast(`Embedding 测试失败: ${data.detail || data.message || '未知错误'}`, 'error');
       }
     });
   }
