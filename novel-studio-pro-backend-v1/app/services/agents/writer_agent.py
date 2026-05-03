@@ -400,6 +400,20 @@ class WriterAgent(BaseAgent):
                     if full_content:
                         data = self._safe_parse_json(full_content)
                         scene_text = data.get("text", scene_text)
+
+                    # 硬性字数限制：截断超出目标130%的场景
+                    if scene_text and len(scene_text) > int(scene_target * 1.3):
+                        paragraphs = [p for p in scene_text.split('\n') if p.strip()]
+                        truncated = []
+                        current_len = 0
+                        for p in paragraphs:
+                            if current_len + len(p) > int(scene_target * 1.3) and truncated:
+                                break
+                            truncated.append(p)
+                            current_len += len(p)
+                        if truncated:
+                            scene_text = '\n'.join(truncated)
+                            logger.warning("[Writer] 流式场景 %d 字数超限，已截断", i + 1)
                 except Exception as exc:
                     logger.warning(
                         "[Writer] 场景 %d AI 生成失败，回退 Mock: %s",
@@ -545,6 +559,22 @@ class WriterAgent(BaseAgent):
         data = self._safe_parse_json(content)
         text = data.get("text", "")
         word_count = data.get("word_count", len(text))
+
+        # 硬性字数限制：如果超出目标上限120%，截断到最后一个完整段落
+        hard_max = int(target_word_count * 1.3)
+        if len(text) > hard_max:
+            paragraphs = [p for p in text.split('\n') if p.strip()]
+            truncated = []
+            current_len = 0
+            for p in paragraphs:
+                if current_len + len(p) > hard_max and truncated:
+                    break
+                truncated.append(p)
+                current_len += len(p)
+            if truncated:
+                text = '\n'.join(truncated)
+                word_count = len(text)
+                logger.warning("[Writer] 场景字数 %d 超过上限 %d，已截断", word_count, hard_max)
 
         return {"text": text, "word_count": word_count}
 
