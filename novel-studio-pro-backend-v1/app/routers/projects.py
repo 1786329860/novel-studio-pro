@@ -42,6 +42,78 @@ def create_project(payload: CreateProjectRequest):
     return project_service.create_project(payload.model_dump())
 
 
+# ======================================================================
+# 连接测试 & 系统诊断接口（必须在 /{project_id} 之前，否则被通配拦截）
+# ======================================================================
+
+@router.get("/test-connection")
+async def test_connection():
+    """测试后端与 DeepSeek 的连通性"""
+    from app.core.config import config
+    from app.services.deepseek_client import DeepSeekClient
+
+    if not config.use_deepseek:
+        return {"ok": False, "message": "DeepSeek 未启用（USE_DEEPSEEK=false）"}
+    if not config.deepseek_api_key:
+        return {"ok": False, "message": "API Key 未配置"}
+
+    client = DeepSeekClient()
+    try:
+        result = await client.chat(
+            messages=[{"role": "user", "content": "你好，请回复\"连接正常\""}],
+            max_tokens=20,
+            temperature=0.1
+        )
+        return {"ok": True, "message": "连接成功", "response": result[:50] if result else ""}
+    except Exception as e:
+        return {"ok": False, "message": f"连接失败: {str(e)[:200]}"}
+
+
+@router.post("/test-model")
+async def test_model(body: dict = Body(...)):
+    """测试指定模型的连通性"""
+    from app.core.config import config
+    from app.services.deepseek_client import DeepSeekClient
+
+    model = body.get("model", config.deepseek_main_model)
+    client = DeepSeekClient()
+    try:
+        result = await client.chat(
+            messages=[{"role": "user", "content": "测试"}],
+            max_tokens=10,
+            temperature=0.1,
+            model=model
+        )
+        return {"ok": True, "model": model, "message": "模型可用", "response": result[:50] if result else ""}
+    except Exception as e:
+        return {"ok": False, "model": model, "message": f"模型不可用: {str(e)[:200]}"}
+
+
+@router.get("/test-embedding")
+async def test_embedding():
+    """测试 Embedding 服务连通性"""
+    from app.services.embedding_client import embedding_client
+
+    if not embedding_client.api_key:
+        return {"ok": False, "message": "硅基流动 API Key 未配置"}
+
+    try:
+        vec = embedding_client.embed_query("测试文本")
+        dim = len(vec) if vec else 0
+        return {"ok": True, "message": "Embedding 服务正常", "dimension": dim, "model": embedding_client.model}
+    except Exception as e:
+        return {"ok": False, "message": f"Embedding 服务异常: {str(e)[:200]}"}
+
+
+@router.get("/request-logs")
+async def get_request_logs(limit: int = 50):
+    """获取最近的 API 请求日志"""
+    from app.core.storage import store
+    data = store.read()
+    logs = data.get("requestLogs", [])
+    return {"logs": logs[-limit:]}
+
+
 @router.get("/{project_id}")
 def get_project(project_id: str):
     return {"project": project_service.get_project(project_id)}
@@ -341,78 +413,6 @@ async def cancel_task(task_id: str):
     if not success:
         return JSONResponse(status_code=400, content={"detail": "任务不存在或已完成，无法取消"})
     return {"taskId": task_id, "status": "cancelled", "message": "任务已取消"}
-
-
-# ======================================================================
-# 连接测试 & 系统诊断接口
-# ======================================================================
-
-@router.get("/test-connection")
-async def test_connection():
-    """测试后端与 DeepSeek 的连通性"""
-    from app.core.config import config
-    from app.services.deepseek_client import DeepSeekClient
-
-    if not config.use_deepseek:
-        return {"ok": False, "message": "DeepSeek 未启用（USE_DEEPSEEK=false）"}
-    if not config.deepseek_api_key:
-        return {"ok": False, "message": "API Key 未配置"}
-
-    client = DeepSeekClient()
-    try:
-        result = await client.chat(
-            messages=[{"role": "user", "content": "你好，请回复\"连接正常\""}],
-            max_tokens=20,
-            temperature=0.1
-        )
-        return {"ok": True, "message": "连接成功", "response": result[:50] if result else ""}
-    except Exception as e:
-        return {"ok": False, "message": f"连接失败: {str(e)[:200]}"}
-
-
-@router.post("/test-model")
-async def test_model(body: dict = Body(...)):
-    """测试指定模型的连通性"""
-    from app.core.config import config
-    from app.services.deepseek_client import DeepSeekClient
-
-    model = body.get("model", config.deepseek_main_model)
-    client = DeepSeekClient()
-    try:
-        result = await client.chat(
-            messages=[{"role": "user", "content": "测试"}],
-            max_tokens=10,
-            temperature=0.1,
-            model=model
-        )
-        return {"ok": True, "model": model, "message": "模型可用", "response": result[:50] if result else ""}
-    except Exception as e:
-        return {"ok": False, "model": model, "message": f"模型不可用: {str(e)[:200]}"}
-
-
-@router.get("/test-embedding")
-async def test_embedding():
-    """测试 Embedding 服务连通性"""
-    from app.services.embedding_client import embedding_client
-
-    if not embedding_client.api_key:
-        return {"ok": False, "message": "硅基流动 API Key 未配置"}
-
-    try:
-        vec = embedding_client.embed_query("测试文本")
-        dim = len(vec) if vec else 0
-        return {"ok": True, "message": "Embedding 服务正常", "dimension": dim, "model": embedding_client.model}
-    except Exception as e:
-        return {"ok": False, "message": f"Embedding 服务异常: {str(e)[:200]}"}
-
-
-@router.get("/request-logs")
-async def get_request_logs(limit: int = 50):
-    """获取最近的 API 请求日志"""
-    from app.core.storage import store
-    data = store.read()
-    logs = data.get("requestLogs", [])
-    return {"logs": logs[-limit:]}
 
 
 # ======================================================================
