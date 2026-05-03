@@ -448,7 +448,7 @@ function renderMemoryPage(project) {
   ];
   return `
     <main class="page memory-page">
-      <div class="page-head"><div><h1>全局记忆 · 自动上下文中心</h1><p>管理每次生成前需要检索的状态包、摘要包、向量记忆与状态快照。</p></div><div class="head-actions"><button class="primary-btn">重建全局记忆</button><button class="soft-btn">压缩历史正文</button></div></div>
+      <div class="page-head"><div><h1>全局记忆 · 自动上下文中心</h1><p>管理每次生成前需要检索的状态包、摘要包、向量记忆与状态快照。</p></div><div class="head-actions"><button class="primary-btn" data-action="rebuildMemory">重建全局记忆</button><button class="soft-btn" data-action="compressHistory">压缩历史正文</button></div></div>
       <section class="memory-grid">${memoryPacks.map(([a,b,c,t]) => `<div class="card memory-pack"><h2>${a}</h2><p>${b}</p><div class="metric-line"><b>可用度</b><span>${c}%</span>${progress(c, t)}</div></div>`).join('')}</section>
       <section class="memory-layout"><div class="card"><h2>下一章上下文包预览</h2><div class="context-stack">${['当前卷大纲', '最近 3 章摘要', '本章相关角色卡', '高风险伏笔', '角色知识边界', '用户临时指令', '风格约束', '禁止事项'].map((x) => `<span>${x}</span>`).join('')}</div><div class="preview-card"><h3>Token 控制策略</h3><p>优先使用结构化状态和摘要；正文片段只在相关度高时检索，防止 DeepSeek 输入过长导致超时。</p></div></div><div class="card"><h2>章节摘要记忆</h2>${latestSummaries.length ? latestSummaries.map((x) => `<div class="list-row"><span class="dot-icon">✓</span><div><b>${escapeHtml(x)}</b><small>已写入章节摘要库</small></div></div>`).join('') : '<p class="muted">暂无章节摘要，生成并确认章节后自动写入。</p>'}</div><div class="card"><h2>状态快照</h2>${[0, 1, 2, 3].map((_, i) => `<div class="title-row"><span>Snapshot #${i + 1}</span><b>第 ${Math.max(0, project.currentChapterNumber - i)} 章状态</b></div>`).join('')}</div></section>
     </main>
@@ -499,7 +499,7 @@ function renderModelConfigPage(state) {
   const routes = s.modelRoutes || defaultModelRoutes();
   return `
     <main class="page models-page">
-      <div class="page-head"><div><h1>模型配置 · 任务路由</h1><p>不同 Agent 可以使用不同模型、温度、输出上限和降级策略，降低成本并减少超时。</p></div><div class="head-actions"><button class="primary-btn">测试模型连通性</button><button class="soft-btn">恢复推荐配置</button></div></div>
+      <div class="page-head"><div><h1>模型配置 · 任务路由</h1><p>不同 Agent 可以使用不同模型、温度、输出上限和降级策略，降低成本并减少超时。</p></div><div class="head-actions"><button class="primary-btn" data-action="testModelConnectivity">测试模型连通性</button><button class="soft-btn" data-action="resetModelDefaults">恢复推荐配置</button></div></div>
       <form id="model-settings-form" class="card settings-form">
         <div class="settings-grid">
           <label><span>主写作模型</span><select name="writingModel" class="select">${modelOptions(s.writingModel)}</select></label>
@@ -536,7 +536,7 @@ function renderDeepSeekPage(state) {
   const s = state.settings;
   return `
     <main class="page deepseek-page">
-      <div class="page-head"><div><h1>DeepSeek API 设置</h1><p>本页为桌面软件的本地 API 配置界面。正式接入时建议由本地后端保存 Key，前端只发请求到 127.0.0.1。</p></div><div class="head-actions"><button class="primary-btn">连接测试</button><button class="soft-btn">查看请求日志</button></div></div>
+      <div class="page-head"><div><h1>DeepSeek API 设置</h1><p>本页为桌面软件的本地 API 配置界面。正式接入时建议由本地后端保存 Key，前端只发请求到 127.0.0.1。</p></div><div class="head-actions"><button class="primary-btn" data-action="testConnection">连接测试</button><button class="soft-btn" data-action="viewRequestLogs">查看请求日志</button></div></div>
       <section class="api-status card"><div><h2>连接状态</h2><p>${s.mockMode ? 'Mock 模式运行中，暂未连接真实 DeepSeek。' : '将连接本地后端，由后端代理 DeepSeek 请求。'}</p></div>${pill(s.mockMode ? '演示模式' : '后端模式', s.mockMode ? 'orange' : 'mint')}</section>
       <form id="deepseek-form" class="card settings-form">
         <div class="settings-grid">
@@ -716,13 +716,212 @@ app.addEventListener('click', async (event) => {
 
   if (action === 'analyzeState') {
     if (!project) return showToast('请先创建项目', 'error');
-    const result = await runTask('正在分析全局状态和风险……', () => api.analyzeState(project.id));
-    showToast(result.report?.summary || '状态分析完成。');
+    const result = await runTask('正在分析全局状态和风险……', async () => {
+      const res = await api.analyzeState(project.id);
+      if (res && res.project) {
+        updateProject(project.id, () => res.project);
+      }
+      return res;
+    });
+    showToast(result?.report?.summary || '状态分析完成。');
   }
 
   if (action === 'resetDemo') {
     resetDemoData();
     showToast('本地演示数据已清空。');
+  }
+
+  if (action === 'editVolumeStructure') {
+    showToast('卷结构编辑功能开发中，目前请在创建项目时规划好分卷', 'info');
+  }
+
+  if (action === 'autoCompleteCharacters') {
+    if (!project) return;
+    runTask('正在补全角色信息...', async () => {
+      const result = await api.buildProject(project.id);
+      if (result.project) updateProject(project.id, () => result.project);
+      showToast('角色信息已补全');
+    });
+  }
+
+  if (action === 'exportCharacters') {
+    if (!project) return;
+    const characters = project.characters || [];
+    const csv = ['姓名,角色类型,性格,目标,掉线风险,主动性', ...characters.map(c =>
+      `${c.name || ''},${c.role || ''},${c.personality || ''},${c.goal || ''},${(c.dropoutRisk || 0).toFixed(2)},${c.initiative || 0}`
+    )].join('\n');
+    downloadFile(`角色表_${project.title || '未命名'}.csv`, csv, 'text/csv;charset=utf-8');
+    showToast('角色表已导出');
+  }
+
+  if (action === 'organizeForeshadows') {
+    showToast('伏笔整理功能将在下一版本实现', 'info');
+  }
+
+  if (action === 'generatePayoffPlan') {
+    showToast('回收计划功能将在下一版本实现', 'info');
+  }
+
+  if (action === 'addForeshadow') {
+    const content = prompt('请输入伏笔内容：');
+    if (!content || !project) return;
+    updateProject(project.id, (p) => ({
+      ...p,
+      foreshadows: [...(p.foreshadows || []), {
+        id: 'fs_' + Date.now(),
+        content,
+        status: 'planted',
+        plantedChapter: p.currentChapterNumber || 0
+      }]
+    }));
+    showToast('伏笔已添加');
+  }
+
+  if (action === 'chapterMenu') {
+    showToast('章节菜单：导出、重命名等功能开发中', 'info');
+  }
+
+  if (action === 'toggleWritingMode') {
+    showToast('写作模式切换功能开发中', 'info');
+  }
+
+  if (action === 'continueWriting') {
+    if (!project) return showToast('请先创建项目', 'error');
+    runTask('正在续写...', async () => {
+      const result = await api.generateNextChapterStream(project.id, { userInstruction: '续写当前章节，从已有内容的结尾自然延续' });
+      if (result) showToast('续写完成');
+    });
+  }
+
+  if (action === 'generateReport') {
+    if (!project) return;
+    runTask('正在生成检查报告...', async () => {
+      const result = await api.analyzeState(project.id);
+      showToast(result.report?.summary || '状态分析完成');
+    });
+  }
+
+  if (action === 'lockChapterState') {
+    showToast('状态锁定功能将在下一版本实现', 'info');
+  }
+
+  if (action === 'rebuildLedger') {
+    if (!project) return;
+    runTask('正在重建事件账本...', async () => {
+      const settings = getSettings();
+      const baseUrl = settings.backendBaseUrl.replace(/\/$/, '');
+      const resp = await fetch(`${baseUrl}/api/projects/${project.id}/rebuild-ledger`, { method: 'POST' });
+      const data = await resp.json();
+      showToast(data.message || '重建完成');
+    });
+  }
+
+  if (action === 'exportLedgerCsv') {
+    if (!project) return;
+    const events = project.events || [];
+    const csv = ['章节,描述,类型', ...events.map(e =>
+      `${e.chapter || ''},"${(e.description || '').replace(/"/g, '""')}",${e.type || ''}`
+    )].join('\n');
+    downloadFile(`事件账本_${project.title || '未命名'}.csv`, csv, 'text/csv;charset=utf-8');
+    showToast('事件账本已导出');
+  }
+
+  if (action === 'rebuildMemory') {
+    if (!project) return;
+    runTask('正在重建全局记忆（生成 Embedding）...', async () => {
+      const settings = getSettings();
+      const baseUrl = settings.backendBaseUrl.replace(/\/$/, '');
+      const resp = await fetch(`${baseUrl}/api/projects/${project.id}/rebuild-memory`, { method: 'POST' });
+      const data = await resp.json();
+      showToast(data.message || '重建完成');
+    });
+  }
+
+  if (action === 'compressHistory') {
+    if (!project) return;
+    if (!confirm('压缩后历史章节正文将被截断为摘要，此操作不可撤销。确定继续？')) return;
+    runTask('正在压缩历史正文...', async () => {
+      const settings = getSettings();
+      const baseUrl = settings.backendBaseUrl.replace(/\/$/, '');
+      const resp = await fetch(`${baseUrl}/api/projects/${project.id}/compress-history`, { method: 'POST' });
+      const data = await resp.json();
+      showToast(data.message || '压缩完成');
+    });
+  }
+
+  if (action === 'testModelConnectivity') {
+    runTask('正在测试模型连通性...', async () => {
+      const settings = getSettings();
+      const baseUrl = settings.backendBaseUrl.replace(/\/$/, '');
+      const resp = await fetch(`${baseUrl}/api/test-model`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: settings.writingModel })
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        showToast(`模型 ${data.model} 连通正常`);
+      } else {
+        showToast(`模型测试失败: ${data.message}`, 'error');
+      }
+    });
+  }
+
+  if (action === 'resetModelDefaults') {
+    if (confirm('确定恢复推荐配置？当前自定义配置将丢失。')) {
+      setSettings({
+        writingModel: 'deepseek-v4-flash',
+        reviewModel: 'deepseek-v4-pro',
+        fallbackModel: 'deepseek-v4-flash',
+        embeddingModel: 'BAAI/bge-m3',
+        temperatureWriting: 0.9,
+        temperatureReview: 0.2
+      });
+      showToast('已恢复推荐配置');
+    }
+  }
+
+  if (action === 'testConnection') {
+    runTask('正在测试连接...', async () => {
+      const settings = getSettings();
+      const baseUrl = settings.backendBaseUrl.replace(/\/$/, '');
+      const resp = await fetch(`${baseUrl}/api/test-connection`);
+      const data = await resp.json();
+      if (data.ok) {
+        showToast(`连接成功: ${data.message}`);
+      } else {
+        showToast(`连接失败: ${data.message}`, 'error');
+      }
+    });
+  }
+
+  if (action === 'viewRequestLogs') {
+    runTask('正在获取请求日志...', async () => {
+      const settings = getSettings();
+      const baseUrl = settings.backendBaseUrl.replace(/\/$/, '');
+      const resp = await fetch(`${baseUrl}/api/request-logs?limit=20`);
+      const data = await resp.json();
+      const logs = data.logs || [];
+      if (logs.length === 0) {
+        showToast('暂无请求日志');
+      } else {
+        const logText = logs.map(l => `[${l.timestamp || ''}] ${l.model || ''} ${l.path || ''} ${l.status || ''} ${l.duration || ''}ms`).join('\n');
+        alert('最近请求日志：\n\n' + logText);
+      }
+    });
+  }
+
+  if (action === 'rewriteChapter') {
+    if (!project) return showToast('请先创建项目', 'error');
+    if (busyText) return;
+    runTask('正在重写本章...', async () => {
+      const chapter = state.pendingChapter;
+      if (!chapter) return showToast('没有可重写的章节', 'error');
+      const result = await api.generateNextChapterStream(project.id, {
+        userInstruction: `请重写第${chapter.number}章「${chapter.title}」，保持相同剧情走向但重新创作正文`
+      });
+      if (result) showToast('重写完成');
+    });
   }
 
   if (action === 'editGuide') {
@@ -950,4 +1149,16 @@ document.addEventListener('click', (event) => {
 });
 
 subscribe(render);
+
+// 事件搜索功能
+const eventSearch = document.getElementById('event-search');
+if (eventSearch) {
+  eventSearch.addEventListener('input', (e) => {
+    const keyword = e.target.value.toLowerCase();
+    document.querySelectorAll('#ledger-table tbody tr').forEach(row => {
+      row.style.display = row.textContent.toLowerCase().includes(keyword) ? '' : 'none';
+    });
+  });
+}
+
 render();

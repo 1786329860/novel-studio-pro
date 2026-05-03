@@ -144,10 +144,6 @@ export function setActiveRoute(route) {
   });
 }
 
-export function getSettings() {
-  return getState().settings;
-}
-
 export function setSettings(partial) {
   return updateState((state) => {
     state.settings = {
