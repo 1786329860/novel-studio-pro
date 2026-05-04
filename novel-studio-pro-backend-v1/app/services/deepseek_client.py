@@ -40,7 +40,15 @@ class DeepSeekClient:
 
     def is_ready(self) -> bool:
         settings = settings_service.get_deepseek(safe=False)
-        return bool(settings.get("enabled") and settings.get("apiKey"))
+        enabled = bool(settings.get("enabled"))
+        has_key = bool(settings.get("apiKey"))
+        ready = enabled and has_key
+        logger.info(
+            "[DeepSeek] is_ready 检查: enabled=%s, hasApiKey=%s, ready=%s, baseUrl=%s",
+            enabled, has_key, ready,
+            str(settings.get("baseUrl") or "")[:60],
+        )
+        return ready
 
     async def chat(
         self,

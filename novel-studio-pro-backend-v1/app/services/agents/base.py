@@ -100,6 +100,11 @@ class BaseAgent(ABC):
         is_mock = generation.get("mockMode", False) or not deepseek_client.is_ready()
         is_ready = deepseek_client.is_ready()
 
+        logger.info(
+            "[Agent] %s 执行判断: mockMode=%s, is_ready=%s, is_mock=%s",
+            self.name, generation.get("mockMode"), is_ready, is_mock,
+        )
+
         if is_mock or not is_ready:
             logger.info("[Mock] %s 使用 Mock 模式执行 (mockMode=%s, is_ready=%s)", self.name, generation.get("mockMode"), is_ready)
             try:

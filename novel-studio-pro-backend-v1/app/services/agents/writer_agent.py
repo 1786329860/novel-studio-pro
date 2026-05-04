@@ -174,8 +174,13 @@ class WriterAgent(BaseAgent):
             {"type": "result", "data": {...}} - 最终结构化结果
         """
         generation = settings_service.get_generation()
-        is_mock = not deepseek_client.is_ready()
+        is_mock = generation.get("mockMode", False) or not deepseek_client.is_ready()
         is_ready = deepseek_client.is_ready()
+
+        logger.info(
+            "[WriterAgent.run_stream] mockMode=%s, is_ready=%s, is_mock=%s",
+            generation.get("mockMode"), is_ready, is_mock,
+        )
 
         if is_mock or not is_ready:
             # Mock 模式：一次性返回结果
@@ -247,8 +252,13 @@ class WriterAgent(BaseAgent):
             与 run() 输出格式一致的结构化 dict
         """
         generation = settings_service.get_generation()
-        is_mock = not deepseek_client.is_ready()
+        is_mock = generation.get("mockMode", False) or not deepseek_client.is_ready()
         is_ready = deepseek_client.is_ready()
+
+        logger.info(
+            "[WriterAgent.write_by_scene] mockMode=%s, is_ready=%s, is_mock=%s",
+            generation.get("mockMode"), is_ready, is_mock,
+        )
 
         project = context.get("project", {})
 
@@ -343,8 +353,13 @@ class WriterAgent(BaseAgent):
             {"type": "result", "data": {...}} - 最终结构化结果
         """
         generation = settings_service.get_generation()
-        is_mock = not deepseek_client.is_ready()
+        is_mock = generation.get("mockMode", False) or not deepseek_client.is_ready()
         is_ready = deepseek_client.is_ready()
+
+        logger.info(
+            "[WriterAgent.write_by_scene_stream] mockMode=%s, is_ready=%s, is_mock=%s",
+            generation.get("mockMode"), is_ready, is_mock,
+        )
 
         project = context.get("project", {})
 

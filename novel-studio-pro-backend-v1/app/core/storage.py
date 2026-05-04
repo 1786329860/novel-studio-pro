@@ -263,3 +263,49 @@ def _create_store():
 
 
 store = _create_store()
+
+# ---------------------------------------------------------------------------
+# 启动时同步 .env 配置到数据存储
+# 确保 USE_DEEPSEEK / DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL 等 .env 值
+# 能正确同步到 JSON/SQLite 存储中的 settings.deepseek 字段。
+# 只在存储中的值为空/False 时才同步，不覆盖用户通过前端手动设置的值。
+# ---------------------------------------------------------------------------
+def _sync_env_to_store() -> None:
+    """将 .env 中的 DeepSeek 配置同步到数据存储（仅在存储中缺失时）。"""
+    if not config.use_deepseek or not config.deepseek_api_key:
+        return
+
+    try:
+        data = store.read()
+        ds = data.get("settings", {}).get("deepseek", {})
+
+        needs_sync = False
+        if not ds.get("enabled"):
+            ds["enabled"] = True
+            needs_sync = True
+        if not ds.get("apiKey"):
+            ds["apiKey"] = config.deepseek_api_key
+            needs_sync = True
+        if not ds.get("baseUrl") or ds.get("baseUrl") == "https://api.deepseek.com":
+            if config.deepseek_base_url and config.deepseek_base_url != "https://api.deepseek.com":
+                ds["baseUrl"] = config.deepseek_base_url
+                needs_sync = True
+        if not ds.get("mainModel"):
+            ds["mainModel"] = config.deepseek_main_model
+            needs_sync = True
+        if not ds.get("fastModel"):
+            ds["fastModel"] = config.deepseek_fast_model
+            needs_sync = True
+
+        if needs_sync:
+            data.setdefault("settings", {})["deepseek"] = ds
+            store.write(data)
+            logger.info(
+                "[Storage] 已从 .env 同步 DeepSeek 配置到存储: enabled=%s, hasApiKey=%s, baseUrl=%s",
+                ds.get("enabled"), bool(ds.get("apiKey")), ds.get("baseUrl", "")[:60],
+            )
+    except Exception as exc:
+        logger.warning("[Storage] .env 配置同步失败: %s", exc)
+
+
+_sync_env_to_store()
