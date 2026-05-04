@@ -59,7 +59,7 @@ class DeepSeekClient:
         if not api_key:
             raise RuntimeError("DeepSeek API Key 未配置。")
 
-        base_url = str(settings.get("baseUrl") or "https://api.deepseek.com").rstrip("/")
+        base_url = str(settings.get("baseUrl") or "https://api.deepseek.com").strip().strip("`").rstrip("/")
         url = f"{base_url}/chat/completions"
         model_name = model or settings.get("mainModel") or "deepseek-chat"
         retry_times = int(settings.get("retryTimes") or 2)
@@ -160,7 +160,7 @@ class DeepSeekClient:
         if not api_key:
             raise RuntimeError("DeepSeek API Key 未配置。")
 
-        base_url = str(settings.get("baseUrl") or "https://api.deepseek.com").rstrip("/")
+        base_url = str(settings.get("baseUrl") or "https://api.deepseek.com").strip().strip("`").rstrip("/")
         url = f"{base_url}/chat/completions"
         model_name = model or settings.get("mainModel") or "deepseek-chat"
         retry_times = int(settings.get("retryTimes") or 2)
