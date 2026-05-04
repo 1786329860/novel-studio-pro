@@ -376,7 +376,7 @@ def build_writer_prompt(
                 "role": c.get("role", ""),
                 "personality": c.get("personality", ""),
                 "emotion": c.get("emotion", ""),
-                "speakingStyle": "待推断",
+                "speakingStyle": c.get("speakingStyle", "待推断"),
             }
             for c in project.get("characters", [])[:6]
         ],
@@ -708,7 +708,7 @@ def build_scene_writing_prompt(
                 "role": char_info.get("role", ""),
                 "personality": char_info.get("personality", ""),
                 "emotion": char_info.get("emotion", ""),
-                "speakingStyle": "待推断",
+                "speakingStyle": char_info.get("speakingStyle", "待推断"),
             })
         else:
             character_details.append({"name": char_name, "role": "未知", "personality": "", "emotion": ""})
@@ -763,7 +763,10 @@ def build_scene_writing_prompt(
         "7. 包含足够的感官细节和情绪描写\n"
         "8. 不要在正文中直接解释伏笔，要自然融入叙事\n"
         "9. 对话占比控制在 20%-40% 之间\n"
-        "10. 时刻注意字数，写到上限必须收束"
+        "10. 时刻注意字数，写到上限必须收束\n"
+        "11. 不要使用与上一章相同的场景开头方式\n"
+        "12. 对话必须有信息量，禁止谜语式对话超过2轮\n"
+        "13. 角色反应要具体化，避免标签化行为（如'冷硬地分析'、'神秘地微笑'）"
     )
 
     user_prompt = (

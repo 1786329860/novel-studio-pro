@@ -143,6 +143,19 @@ class ContextBuilder:
         context["target_total_words"] = target_total_words
         context["min_words"] = min_words
 
+        # Add anti-repetition context
+        recent = self._get_recent_chapter_summaries(project, max_chapters=2)
+        if recent:
+            all_times = []
+            all_locations = []
+            for ch in recent:
+                all_times.extend(ch.get("scene_times", []))
+                all_locations.extend(ch.get("scene_locations", []))
+            if all_times:
+                context["previous_scene_times"] = list(set(all_times))
+            if all_locations:
+                context["previous_scene_locations"] = list(set(all_locations))
+
         logger.info("[ContextBuilder] 导演上下文构建完成 (目标字数: %d-%d)", min_words, target_total_words)
         return context
 
@@ -207,6 +220,19 @@ class ContextBuilder:
         context["target_total_words"] = target_total_words
         context["min_words"] = min_words
         context["max_words"] = target_total_words  # max_words = target_total_words (用户设置的最大值)
+
+        # Add anti-repetition context from recent chapters
+        recent = self._get_recent_chapter_summaries(project, max_chapters=2)
+        if recent:
+            prev_times = []
+            prev_locations = []
+            for ch in recent:
+                prev_times.extend(ch.get("scene_times", []))
+                prev_locations.extend(ch.get("scene_locations", []))
+            if prev_times:
+                context["previous_scene_times"] = list(set(prev_times))
+            if prev_locations:
+                context["previous_scene_locations"] = list(set(prev_locations))
 
         logger.info("[ContextBuilder] 写作上下文构建完成 (目标字数: %d-%d)", min_words, target_total_words)
         return context
@@ -443,6 +469,7 @@ class ContextBuilder:
                 "emotion": char.get("emotion", ""),
                 "agencyScore": char.get("agencyScore", 0),
                 "dropoutRisk": char.get("dropoutRisk", 0),
+                "speakingStyle": char.get("speakingStyle", ""),
                 "knowledgeState": char.get("knowledgeState", []),
             })
         return result
@@ -546,6 +573,12 @@ class ContextBuilder:
             director = ch.get("directorPlan", {})
             if director.get("goal"):
                 summary["goal"] = director["goal"]
+
+            # Extract scene patterns for anti-repetition
+            scenes = ch.get("scenes", [])
+            if scenes:
+                summary["scene_times"] = [s.get("time", "") for s in scenes if s.get("time")]
+                summary["scene_locations"] = [s.get("location", "") for s in scenes if s.get("location")]
 
             summaries.append(summary)
 
