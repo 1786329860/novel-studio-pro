@@ -174,7 +174,7 @@ class WriterAgent(BaseAgent):
             routes = settings_service.get_all(safe=False).get("modelRoutes", {})
             route = routes.get(self.model_route_key, {})
             target_words = context.get("target_total_words", 5000)
-            calc_max = max(500, int(target_words * 1.8) + 200)
+            calc_max = max(500, int(target_words * 1.2) + 100)
             route_max = int(route.get("maxOutputTokens", self.default_max_tokens))
 
             full_content = ""
@@ -374,7 +374,7 @@ class WriterAgent(BaseAgent):
                     )
                     routes = settings_service.get_all(safe=False).get("modelRoutes", {})
                     route = routes.get(self.model_route_key, {})
-                    scene_calc_max = max(500, int(scene_target * 1.8) + 200)
+                    scene_calc_max = max(500, int(scene_target * 1.2) + 100)
                     scene_route_max = int(route.get("maxOutputTokens", self.default_max_tokens))
 
                     full_content = ""
@@ -529,7 +529,7 @@ class WriterAgent(BaseAgent):
         route = routes.get(self.model_route_key, {})
 
         # max_tokens 基于目标字数计算（汉字约1.5 token/字），加上JSON包装开销
-        scene_max_tokens = max(500, int(target_word_count * 1.8) + 200)
+        scene_max_tokens = max(500, int(target_word_count * 1.2) + 100)
         route_max = int(route.get("maxOutputTokens", self.default_max_tokens))
         final_max_tokens = min(scene_max_tokens, route_max)
 
