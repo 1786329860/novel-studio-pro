@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from app.core.storage import store
-from app.core.utils import make_id, now_iso, deep_merge
+from app.core.utils import make_id, now_iso, deep_merge, truncate_text
 from app.services import ai_orchestrator
 from app.services.agents import StateMerger
 
@@ -361,7 +361,7 @@ def _apply_event_updates(
     for index, event in enumerate(event_updates):
         if isinstance(event, str):
             # Get actual character names from project
-            char_names = [c.get("name", "") for c in project.get("characters", []) if c.get("name")]
+            char_names = [c.get("name", "") for c in current.get("characters", []) if c.get("name")]
             characters_str = " / ".join(char_names[:3]) if char_names else "未知角色"
             event = {
                 "id": make_id("evt"),
@@ -540,10 +540,23 @@ def _apply_memory_update(
     # 章节摘要
     summaries = memory.setdefault("chapterSummaries", [])
     ch_title = chapter.get("title", f"第{current_chapter}章")
+    # 生成有意义的章节摘要（使用正文前300字 + 导演稿目标）
+    chapter_text = chapter.get("text", "")
+    director_plan = chapter.get("directorPlan", {})
+    chapter_goal = director_plan.get("chapter_goal", "") or director_plan.get("goal", "")
+    if chapter_text:
+        summary_text = truncate_text(chapter_text, 300)
+        if chapter_goal:
+            summary_text = f"[目标: {chapter_goal}] {summary_text}"
+    else:
+        summary_text = f"第{current_chapter}章「{ch_title}」已完成。"
+        if chapter_goal:
+            summary_text += f" 目标: {chapter_goal}"
+
     summaries.append({
         "chapter": current_chapter,
         "title": chapter.get("title"),
-        "summary": f"第{current_chapter}章「{ch_title}」已完成，状态已更新。",
+        "summary": summary_text,
         "wordCount": chapter.get("wordCount", 0),
     })
 

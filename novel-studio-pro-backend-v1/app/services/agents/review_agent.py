@@ -82,7 +82,8 @@ class ReviewAgent(BaseAgent):
             '    {"name": "禁止揭露检查", "passed": true, "score": 100, "message": "检查结果描述"},\n'
             '    {"name": "伏笔处理检查", "passed": true, "score": 82, "message": "检查结果描述"},\n'
             '    {"name": "约束遵守检查", "passed": true, "score": 90, "message": "检查结果描述"},\n'
-            '    {"name": "AI 味检测", "passed": false, "score": 72, "message": "检查结果描述"}\n'
+            '    {"name": "AI 味检测", "passed": false, "score": 72, "message": "检查结果描述"},\n'
+            '    {"name": "读者体验检查", "passed": true, "score": 80, "message": "检查结果描述"}\n'
             "  ],\n"
             '  "rewrite_suggestions": ["修改建议1", "修改建议2"],\n'
             '  "passed": true\n'
@@ -94,7 +95,14 @@ class ReviewAgent(BaseAgent):
             "4. 禁止揭露检查: 是否违反 forbiddenRules，是否提前揭露真相\n"
             "5. 伏笔处理检查: 是否按 foreshadow_actions 处理了伏笔\n"
             "6. 约束遵守检查: 是否满足 must_happen，是否违反 must_not_happen\n"
-            "7. AI 味检测: 是否存在模板化表达、过度修辞、不自然的描写\n\n"
+            "7. AI 味检测: 是否存在模板化表达、过度修辞、不自然的描写\n"
+            "8. 读者体验检查: 站在读者角度评估本章是否引人入胜。具体检查：\n"
+            "   - 开头3段是否有足够的吸引力（是否让人想继续读下去）\n"
+            "   - 是否存在大段平淡无趣的描写（超过300字没有事件/对话/情绪转折）\n"
+            "   - 角色是否有令人印象深刻的反应或台词\n"
+            "   - 结尾是否有足够的悬念或情感冲击\n"
+            "   - 整体节奏是否有松有紧，还是全程平淡\n"
+            "   - 是否有至少一个让读者'意外'或'感动'的瞬间\n\n"
             "评分标准：\n"
             "- 90-100: 优秀，无需修改\n"
             "- 80-89: 良好，可有少量修改\n"
@@ -252,6 +260,20 @@ class ReviewAgent(BaseAgent):
         })
         if ai_taste_score < 80:
             rewrite_suggestions.append("减少'不禁'、'竟然'、'仿佛'等 AI 常用词的使用，用更具体的描写替代。")
+
+        # 8. 读者体验检查
+        reader_experience_score = self._check_reader_experience(text)
+        tests.append({
+            "name": "读者体验检查",
+            "passed": reader_experience_score >= 70,
+            "score": reader_experience_score,
+            "message": "章节节奏有起伏，读者体验良好。" if reader_experience_score >= 80
+            else "部分段落过于平淡，建议增加冲突或情感转折来提升吸引力。"
+            if reader_experience_score >= 70
+            else "章节整体平淡，缺乏吸引读者的亮点，建议大幅调整节奏和内容。",
+        })
+        if reader_experience_score < 80:
+            rewrite_suggestions.append("增强读者体验：确保开头有吸引力，中间有冲突/转折，结尾有悬念。避免连续300字以上的平淡描写。")
 
         # 计算总分
         total_score = int(sum(t["score"] for t in tests) / len(tests))
@@ -527,3 +549,76 @@ class ReviewAgent(BaseAgent):
         }
         keywords = [w for w in words if len(w) >= 2 and w not in stop_words]
         return keywords[:5]  # 最多返回 5 个关键词
+
+    def _check_reader_experience(self, text: str) -> int:
+        """检查读者体验。
+
+        从读者角度评估章节是否引人入胜。
+
+        Args:
+            text: 正文内容
+
+        Returns:
+            读者体验分数（0-100，越高越好）
+        """
+        if not text:
+            return 60
+
+        score = 80  # 基础分
+
+        # 1. 检查开头吸引力（前300字是否有对话、动作或悬念）
+        opening = text[:300]
+        has_dialogue = "「" in opening or "」" in opening
+        has_action = any(v in opening for v in ["猛然", "突然", "转身", "握紧", "推门", "冲向", "抬头", "低头"])
+        has_suspense = any(w in opening for w in ["为什么", "怎么", "难道", "不对", "等等", "不可能"])
+
+        if not (has_dialogue or has_action or has_suspense):
+            score -= 8  # 开头平淡
+
+        # 2. 检查是否有大段平淡描写（超过300字没有对话引号或情绪词）
+        paragraphs = text.split("\n\n")
+        flat_count = 0
+        for para in paragraphs:
+            if len(para) > 300:
+                has_interest = (
+                    "「" in para or "」" in para
+                    or any(w in para for w in ["震惊", "愤怒", "恐惧", "悲伤", "犹豫", "紧张", "心跳", "颤抖"])
+                )
+                if not has_interest:
+                    flat_count += 1
+        if flat_count >= 2:
+            score -= 12
+        elif flat_count == 1:
+            score -= 5
+
+        # 3. 检查情感词密度（衡量情绪起伏）
+        emotion_words = [
+            "震惊", "愤怒", "恐惧", "悲伤", "犹豫", "紧张", "心跳", "颤抖",
+            "温暖", "感动", "苦涩", "无奈", "兴奋", "绝望", "希望", "困惑",
+            "不安", "震惊", "愕然", "沉默", "冷笑", "苦笑", "叹息",
+        ]
+        emotion_count = sum(text.count(w) for w in emotion_words)
+        emotion_density = emotion_count / max(len(text), 1) * 1000
+        if emotion_density < 2:
+            score -= 8  # 情感过于平淡
+        elif emotion_density >= 5:
+            score += 3  # 情感丰富
+
+        # 4. 检查对话比例（纯描写过多会无聊）
+        dialogue_chars = sum(1 for c in text if c in "「」""")
+        dialogue_ratio = dialogue_chars / max(len(text), 1)
+        if dialogue_ratio < 0.1:
+            score -= 8  # 对话太少
+        elif dialogue_ratio > 0.5:
+            score -= 3  # 对话太多
+
+        # 5. 检查结尾悬念
+        ending = text[-200:]
+        has_ending_hook = any(w in ending for w in [
+            "然而", "但是", "突然", "却", "不料", "没想到",
+            "？", "！", "……", "——",
+        ])
+        if not has_ending_hook:
+            score -= 5
+
+        return max(50, min(100, score))

@@ -96,7 +96,11 @@ def build_outline_expansion_prompt(project: dict[str, Any]) -> list[dict[str, st
                 "  }\n"
                 "}\n\n"
                 "## 关键规则\n"
-                "1. 角色数量根据大纲复杂度决定，至少3个，最多8个\n"
+                "1. 角色数量根据大纲复杂度决定，至少4个，最多12个。除了大纲明确提到的角色外，你必须根据故事需要推断并创建：\n"
+                "   - 反派/对手角色（如果大纲涉及冲突对抗）\n"
+                "   - 关键配角（推动剧情或揭示信息所需的角色）\n"
+                "   - 导师/引路人角色（如果大纲涉及成长线）\n"
+                "   每个新增角色都必须有存在的叙事必要性，不能为了凑数而创建\n"
                 "2. 每个角色必须有完整的 personality、background、currentGoal\n"
                 "3. agencyScore 范围 0.0-1.0，dropoutRisk 范围 0.0-1.0\n"
                 "4. 伏笔数量根据大纲复杂度决定，至少3个，最多8个\n"
@@ -105,7 +109,7 @@ def build_outline_expansion_prompt(project: dict[str, Any]) -> list[dict[str, st
                 "7. chapterTitlePreview 至少生成 20 个章节标题\n"
                 "8. forbiddenRules 至少 3 条\n"
                 "9. 所有描述必须基于用户提供的大纲，不能凭空编造与大纲无关的内容\n"
-                "10. 角色名必须从用户大纲中提取，不能自己创造新角色名（除非大纲需要）"
+                "10. 角色名应优先从用户大纲中提取。如果大纲过于简陋（如只有男女主），你必须根据故事类型和冲突需要，合理推断并创建故事必需的配角和反派角色，赋予完整的性格、背景和目标"
             ),
         },
         {
@@ -615,6 +619,9 @@ def build_state_extract_prompt(
         '    "character_changes": [\n'
         '      {"character_id": "角色ID", "character_name": "角色名", "field": "emotion/agencyScore/dropoutRisk/goal", "old": "旧值", "new": "新值", "reason": "变化原因"}\n'
         "    ],\n"
+        '    "personality_shifts": [\n'
+        '      {"character_id": "角色ID", "character_name": "角色名", "shift": "本章中角色性格/行为模式的微妙变化描述", "trigger": "触发变化的事件或情境"}\n'
+        "    ],\n"
         '    "relationship_changes": [\n'
         '      {"from": "角色A", "to": "角色B", "field": "trust/tension", "old_value": 50, "new_value": 45, "delta": -5, "reason": "变化原因"}\n'
         "    ],\n"
@@ -623,6 +630,9 @@ def build_state_extract_prompt(
         "    ],\n"
         '    "new_events": [\n'
         '      {"description": "事件描述", "impact": "影响描述", "visibility": ["看到了此事件的角色名列表"]}\n'
+        "    ],\n"
+        '    "small_details": [\n'
+        '      {"detail": "可能对后续剧情有用的小细节（如角色提到的一个地名、一个习惯动作、一个未解释的反应）", "related_character": "相关角色名"}\n'
         "    ],\n"
         '    "timeline_updates": ["时间线更新描述"],\n'
         '    "knowledge_updates": [\n'
@@ -633,14 +643,16 @@ def build_state_extract_prompt(
         "## 提取规则\n"
         "1. main_progress_delta: 主线推进程度（0-10），0表示无推进，10表示重大推进\n"
         "2. character_changes: 只提取明确发生变化的角色属性\n"
-        "3. relationship_changes: trust 和 tension 的变化范围在 -20 到 +20 之间\n"
-        "4. foreshadow_changes: 只记录正文中实际提及或推进的伏笔\n"
-        "5. new_events: 只记录对后续剧情有影响的事件\n"
-        "6. timeline_updates: 记录时间线上的重要节点\n"
-        "7. knowledge_updates: 记录角色在本章中获得或失去的知识\n"
-        "8. 如果某类变化没有发生，对应列表为空数组即可\n"
-        "9. 所有变化必须有 reason 或 detail 说明原因\n"
-        "10. 不要凭空编造正文中没有的内容"
+        "3. personality_shifts: 提取角色性格/行为模式的微妙变化。这是角色成长的关键信号。例如：一向冷静的角色开始焦虑、独来独往的角色主动寻求帮助、乐观的角色出现自我怀疑。即使变化很小也要记录。\n"
+        "4. relationship_changes: trust 和 tension 的变化范围在 -20 到 +20 之间\n"
+        "5. foreshadow_changes: 只记录正文中实际提及或推进的伏笔\n"
+        "6. new_events: 只记录对后续剧情有影响的事件\n"
+        "7. small_details: 提取正文中看似不起眼但可能对后续剧情有用的小细节。例如：角色不经意提到的一个地名、一个反复出现的小动作、一个未得到解释的反应、一个被忽略的物品。这些细节是后续情节伏笔的素材。\n"
+        "8. timeline_updates: 记录时间线上的重要节点\n"
+        "9. knowledge_updates: 记录角色在本章中获得或失去的知识\n"
+        "10. 如果某类变化没有发生，对应列表为空数组即可\n"
+        "11. 所有变化必须有 reason 或 detail 说明原因\n"
+        "12. 不要凭空编造正文中没有的内容"
     )
 
     user_prompt = (
@@ -735,6 +747,16 @@ def build_scene_writing_prompt(
         "forbiddenRules": story_bible.get("forbiddenRules", []),
         "targetWordCount": target_word_count,
     }
+
+    # 注入深度记忆（如果有）
+    memory_result = project.get("_memory_result", {})
+    if memory_result:
+        relevant_memories = memory_result.get("relevant_chapters", [])
+        if relevant_memories:
+            context["deepMemory"] = relevant_memories[:5]
+        memory_insights = memory_result.get("insights", "")
+        if memory_insights:
+            context["memoryInsights"] = memory_insights
 
     system_prompt = (
         "你是小说自动化创作系统的【正文写作 Agent - 场景模式】。\n\n"

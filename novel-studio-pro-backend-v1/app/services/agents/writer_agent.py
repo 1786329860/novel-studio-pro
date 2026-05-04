@@ -77,7 +77,7 @@ class WriterAgent(BaseAgent):
             '  "narrative_style": "第三人称有限视角"\n'
             "}\n\n"
             "写作规则：\n"
-            "1. 严格按照导演稿的场景顺序和目标写作\n"
+            "1. 以导演稿为蓝图，但允许合理的创作发挥。可以在场景中添加导演稿未提及的细节、小事件、角色反应，使内容更生动。但核心目标和冲突必须完成。\n"
             "2. 遵守所有约束条件（must_happen / must_not_happen）\n"
             "3. 角色分配比例必须符合 character_allocation\n"
             "4. 视角切换必须符合 pov_plan\n"
@@ -97,7 +97,10 @@ class WriterAgent(BaseAgent):
             "17. 反套路：避免使用以下被滥用的情节手段：手机震动/陌生短信/神秘电话（每章最多1次）\n"
             "18. 反重复：不要使用与上一章相同的开头方式（如连续两章都以清晨雾气开头）\n"
             "19. 人物具体化：给角色至少一个'反套路'的反应。如：硬汉也会害怕、冷静的人也会失控、神秘的人也会有笨拙的时刻\n"
-            "20. 场景多样性：不要每章都遵循'现场→档案室→暗巷'的固定路线"
+            "20. 场景多样性：不要每章都遵循'现场→档案室→暗巷'的固定路线\n"
+            "21. 文本层次平衡：每章应包含动作描写、对话、环境描写、心理活动的混合。避免连续500字以上全是同一类型的内容。\n"
+            "22. 角色独特性：每个角色的说话方式、行为习惯必须有区分度。不要让所有角色说话都像同一个人。\n"
+            "23. 可以在场景中一笔带过地提及背景人物（如路人、服务员）增加真实感，但不要给他们独立戏份或对话。笔墨应集中在蓝图角色上。"
         )
 
         # 构建用户消息
@@ -114,6 +117,12 @@ class WriterAgent(BaseAgent):
             "foreshadows": context.get("foreshadows", []),
             "relationships": context.get("relationships", []),
         }
+
+        # 注入深度记忆（如果有）
+        if context.get("deepMemory"):
+            user_content["deepMemory"] = context["deepMemory"]
+        if context.get("memoryInsights"):
+            user_content["memoryInsights"] = context["memoryInsights"]
 
         user_prompt = (
             "请根据以下导演稿和约束条件，撰写章节正文：\n\n"

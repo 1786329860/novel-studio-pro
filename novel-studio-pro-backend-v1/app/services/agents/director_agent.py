@@ -105,6 +105,16 @@ class DirectorAgent(BaseAgent):
             "10. 场景地点必须多样化！不要每章都去档案室、暗巷等固定地点。\n"
             "11. 每章的场景结构应该不同：可以只有2个场景，也可以有4个；可以从黄昏开始，也可以从深夜开始。\n"
             "12. 禁止使用'手机震动/陌生号码发来消息/短信'作为推动情节的手段，每章最多出现1次。\n"
+            "13. 章节结构多样性：不要每章都用'铺垫→推进→冲突→高潮→钩子'的固定模式。可以尝试：\n"
+            "    - 单场景深度挖掘（整章只在一个场景中，通过对话和心理描写推进）\n"
+            "    - 双线并行（两个场景交替推进）\n"
+            "    - 倒叙开头（从结果开始，再回到过程）\n"
+            "    - 纯对话章节（通过角色对话揭示信息）\n"
+            "    - 日常切片（展示角色日常，在平静中埋下暗流）\n"
+            "14. 场景中可以提及背景人物（如路人、服务员）来增加真实感，但不要给他们独立戏份或对话。核心角色必须来自蓝图角色池。\n"
+            "15. 钩子类型要多样化：可以是悬念型（提出问题）、情感型（触动情绪）、反转型（颠覆预期）、预告型（暗示即将发生的事）。\n"
+            "16. 如果有 deepMemory（历史相关记忆），利用这些记忆来创造与前文的呼应和回响。\n"
+            "17. 每章的情感弧线不应该相同，要有意识地创造变化：上一章如果是紧张→爆发，这章可以是平静→暗涌。\n"
         )
 
         # 构建用户消息
@@ -122,6 +132,16 @@ class DirectorAgent(BaseAgent):
             "mainConflict": context.get("mainConflict", ""),
             "endingDirection": context.get("endingDirection", ""),
         }
+
+        # 注入深度记忆和反重复上下文
+        if context.get("deepMemory"):
+            user_content["deepMemory"] = context["deepMemory"]
+        if context.get("memoryInsights"):
+            user_content["memoryInsights"] = context["memoryInsights"]
+        if context.get("previous_scene_times"):
+            user_content["previousSceneTimes"] = context["previous_scene_times"]
+        if context.get("previous_scene_locations"):
+            user_content["previousSceneLocations"] = context["previous_scene_locations"]
 
         user_prompt = (
             "请根据以下项目状态和约束条件，生成本章的导演稿：\n\n"

@@ -73,6 +73,9 @@ class StateExtractorAgent(BaseAgent):
             '    "character_changes": [\n'
             '      {"character_id": "角色ID", "character_name": "角色名", "field": "emotion/agencyScore/dropoutRisk/goal", "old": "旧值", "new": "新值", "reason": "变化原因"}\n'
             "    ],\n"
+            '    "personality_shifts": [\n'
+            '      {"character_id": "角色ID", "character_name": "角色名", "shift": "本章中角色性格/行为模式的微妙变化描述", "trigger": "触发变化的事件或情境"}\n'
+            "    ],\n"
             '    "relationship_changes": [\n'
             '      {"from": "角色A", "to": "角色B", "field": "trust/tension", "old_value": 50, "new_value": 45, "delta": -5, "reason": "变化原因"}\n'
             "    ],\n"
@@ -81,6 +84,9 @@ class StateExtractorAgent(BaseAgent):
             "    ],\n"
             '    "new_events": [\n'
             '      {"description": "事件描述", "impact": "影响描述", "visibility": ["看到了此事件的角色名列表"]}\n'
+            "    ],\n"
+            '    "small_details": [\n'
+            '      {"detail": "可能对后续剧情有用的小细节", "related_character": "相关角色名"}\n'
             "    ],\n"
             '    "timeline_updates": ["时间线更新描述"],\n'
             '    "knowledge_updates": [\n'
@@ -91,13 +97,15 @@ class StateExtractorAgent(BaseAgent):
             "提取规则：\n"
             "1. main_progress_delta: 主线推进程度（0-10），0表示无推进，10表示重大推进\n"
             "2. character_changes: 只提取明确发生变化的角色属性\n"
-            "3. relationship_changes: trust 和 tension 的变化范围在 -20 到 +20 之间\n"
-            "4. foreshadow_changes: 只记录正文中实际提及或推进的伏笔\n"
-            "5. new_events: 只记录对后续剧情有影响的事件\n"
-            "6. timeline_updates: 记录时间线上的重要节点\n"
-            "7. knowledge_updates: 记录角色在本章中获得或失去的知识\n"
-            "8. 如果某类变化没有发生，对应列表为空数组即可\n"
-            "9. 所有变化必须有 reason 或 detail 说明原因"
+            "3. personality_shifts: 提取角色性格/行为模式的微妙变化。例如：冷静的角色开始焦虑、独来独往的角色主动寻求帮助。即使变化很小也要记录。\n"
+            "4. relationship_changes: trust 和 tension 的变化范围在 -20 到 +20 之间\n"
+            "5. foreshadow_changes: 只记录正文中实际提及或推进的伏笔\n"
+            "6. new_events: 只记录对后续剧情有影响的事件\n"
+            "7. small_details: 提取正文中看似不起眼但可能对后续有用的小细节（如角色提到的一个地名、一个习惯动作、一个未解释的反应）\n"
+            "8. timeline_updates: 记录时间线上的重要节点\n"
+            "9. knowledge_updates: 记录角色在本章中获得或失去的知识\n"
+            "10. 如果某类变化没有发生，对应列表为空数组即可\n"
+            "11. 所有变化必须有 reason 或 detail 说明原因"
         )
 
         # 构建用户消息
@@ -141,9 +149,11 @@ class StateExtractorAgent(BaseAgent):
         state_delta = data.get("state_delta", {})
         state_delta.setdefault("main_progress_delta", 0)
         state_delta.setdefault("character_changes", [])
+        state_delta.setdefault("personality_shifts", [])
         state_delta.setdefault("relationship_changes", [])
         state_delta.setdefault("foreshadow_changes", [])
         state_delta.setdefault("new_events", [])
+        state_delta.setdefault("small_details", [])
         state_delta.setdefault("timeline_updates", [])
         state_delta.setdefault("knowledge_updates", [])
 

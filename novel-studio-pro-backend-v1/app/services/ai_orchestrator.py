@@ -672,6 +672,10 @@ async def _run_full_pipeline(
     memory_ctx["taskDescription"] = "生成下一章"
     memory_result = await MemoryAgent().run(memory_ctx)
 
+    # 将记忆检索结果注入 project，供下游 ContextBuilder 使用
+    if memory_result:
+        project["_memory_result"] = memory_result
+
     # 步骤 2: 伏笔规划
     logger.info("[Pipeline] 步骤 2/9: 伏笔规划...")
     foreshadow_ctx = context_builder.build_constraint_context(project)
@@ -774,14 +778,24 @@ async def _run_full_pipeline(
         # 保留默认标题，但可以将 goal 作为补充信息
         pass
 
-    # 组装完整章节
+    # 组装完整章节（directorPlan 需要补充前端期望的字段）
+    enriched_director_plan = dict(director_plan)
+    enriched_director_plan["goal"] = director_plan.get("chapter_goal", "")
+    enriched_director_plan["pov"] = constraints.get("pov_plan", {}).get("primary", "")
+    char_alloc = constraints.get("character_allocation", {})
+    enriched_director_plan["roleFocus"] = {
+        name: int(alloc.get("max_ratio", 0.1) * 100)
+        for name, alloc in char_alloc.items()
+    } if char_alloc else {}
+    enriched_director_plan["forbidden"] = constraints.get("must_not_happen", [])
+
     result = {
         "id": make_id("chapter"),
         "number": number,
         "title": title,
         "status": "pending",
         "wordCount": chapter_text.get("word_count", 0),
-        "directorPlan": director_plan,
+        "directorPlan": enriched_director_plan,
         "text": chapter_text.get("text", ""),
         "review": review,
         "stateDelta": state_delta,
@@ -1043,13 +1057,24 @@ async def generate_next_chapter_stream(
             preview = project.get("chapterTitlePreview", [])
             title = preview[number - 1].get("title", title) if number - 1 < len(preview) else title
 
+            # directorPlan 需要补充前端期望的字段
+            enriched_director_plan = dict(director_plan)
+            enriched_director_plan["goal"] = director_plan.get("chapter_goal", "")
+            enriched_director_plan["pov"] = constraints.get("pov_plan", {}).get("primary", "")
+            char_alloc = constraints.get("character_allocation", {})
+            enriched_director_plan["roleFocus"] = {
+                name: int(alloc.get("max_ratio", 0.1) * 100)
+                for name, alloc in char_alloc.items()
+            } if char_alloc else {}
+            enriched_director_plan["forbidden"] = constraints.get("must_not_happen", [])
+
             chapter = {
                 "id": make_id("chapter"),
                 "number": number,
                 "title": title,
                 "status": "pending",
                 "wordCount": chapter_text.get("word_count", 0),
-                "directorPlan": director_plan,
+                "directorPlan": enriched_director_plan,
                 "text": chapter_text.get("text", ""),
                 "review": review,
                 "stateDelta": state_delta,

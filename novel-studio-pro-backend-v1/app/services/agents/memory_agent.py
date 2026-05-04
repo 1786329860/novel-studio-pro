@@ -93,6 +93,19 @@ class MemoryAgent(BaseAgent):
             "currentChapter": len(project.get("chapters", [])),
         }
 
+        # 如果有语义搜索结果，注入到 Prompt 中增强检索精度
+        semantic_results = context.get("_semantic_results", [])
+        if semantic_results:
+            user_content["semanticSearchResults"] = [
+                {
+                    "chapter": sr.get("chapter", {}).get("number", 0),
+                    "title": sr.get("chapter", {}).get("title", ""),
+                    "score": round(sr.get("score", 0), 3),
+                    "excerpt": sr.get("chapter", {}).get("content", "")[:200],
+                }
+                for sr in semantic_results
+            ]
+
         user_prompt = (
             "请根据以下项目状态和任务需求，检索最相关的记忆片段：\n\n"
             f"{json.dumps(user_content, ensure_ascii=False, indent=2)}"
@@ -102,6 +115,58 @@ class MemoryAgent(BaseAgent):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
+
+    # ------------------------------------------------------------------
+    # AI 调用（覆盖基类，集成 Embedding 语义搜索）
+    # ------------------------------------------------------------------
+
+    async def _ai_run(self, context: dict[str, Any]) -> dict[str, Any]:
+        """使用 AI + Embedding 语义搜索执行记忆检索。
+
+        先用 Embedding 找到最相关的章节，再将结果注入 Prompt，
+        让 AI 基于语义搜索结果进行更精准的记忆检索。
+        """
+        project = context.get("project", {})
+
+        # 先用 Embedding 语义搜索找到相关章节
+        semantic_results = []
+        chapters = project.get("chapters", [])
+        if chapters:
+            task_desc = context.get("taskDescription", "生成下一章")
+            last_chapter = chapters[-1] if chapters else {}
+            query_parts = [task_desc]
+            if last_chapter.get("title"):
+                query_parts.append(f"第{last_chapter.get('number','')}章 {last_chapter.get('title','')}")
+            query = " ".join(query_parts)
+            semantic_results = self._semantic_search_chapters(project, query, top_k=5)
+
+        # 将语义搜索结果注入 context，供 build_messages 使用
+        if semantic_results:
+            context["_semantic_results"] = semantic_results
+
+        # 调用基类的 AI 执行
+        result = await super()._ai_run(context)
+
+        # 将语义搜索结果合并到输出中（确保不丢失）
+        if semantic_results and result.get("relevant_memories"):
+            # 检查 AI 是否已经包含了语义搜索的章节
+            existing_chapters = {
+                m.get("chapter", 0) for m in result["relevant_memories"]
+                if m.get("type") == "chapter_summary"
+            }
+            for sr in semantic_results:
+                ch = sr.get("chapter", {})
+                ch_num = ch.get("number", 0)
+                if ch_num not in existing_chapters:
+                    result["relevant_memories"].append({
+                        "type": "chapter_summary",
+                        "chapter": ch_num,
+                        "relevance": sr.get("score", 0.7),
+                        "content": f"第{ch_num}章 {ch.get('title','')}: {ch.get('content','')[:300]}",
+                        "semantic_score": sr.get("score", 0),
+                    })
+
+        return result
 
     # ------------------------------------------------------------------
     # 响应解析

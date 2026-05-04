@@ -156,6 +156,25 @@ class ContextBuilder:
             if all_locations:
                 context["previous_scene_locations"] = list(set(all_locations))
 
+        # 注入 Memory Agent 的深度记忆结果
+        memory_result = project.get("_memory_result", {})
+        if memory_result:
+            # MemoryAgent 输出 relevant_memories（不是 relevant_chapters）
+            relevant_memories = memory_result.get("relevant_memories", [])
+            if relevant_memories:
+                context["deepMemory"] = relevant_memories[:5]  # 最多注入5条相关记忆
+            # 从 character_contexts 构建洞察
+            character_contexts = memory_result.get("character_contexts", [])
+            if character_contexts:
+                context["memoryInsights"] = "角色状态: " + "; ".join(
+                    f"{c.get('name','')}: {c.get('context','')}"
+                    for c in character_contexts[:5]
+                )
+            # 注入相关伏笔记忆
+            relevant_foreshadows = memory_result.get("relevant_foreshadows", [])
+            if relevant_foreshadows:
+                context["memoryForeshadows"] = relevant_foreshadows[:5]
+
         logger.info("[ContextBuilder] 导演上下文构建完成 (目标字数: %d-%d)", min_words, target_total_words)
         return context
 
@@ -199,9 +218,11 @@ class ContextBuilder:
         characters = self._filter_characters(project, max_count=6)
         context["characters"] = characters
 
-        # 5. 最近章节摘要（写作需要更多上下文来保持文风一致）
-        chapter_summaries = self._get_recent_chapter_summaries(project, max_count=5)
-        context["recentChapterSummaries"] = chapter_summaries
+        # 5. 最近章节摘要（使用扩展摘要：近期详细 + 远期精简）
+        extended = self._get_extended_chapter_summaries(project, recent_count=5, extended_count=10)
+        context["recentChapterSummaries"] = extended["recent"]
+        if extended["extended"]:
+            context["extendedChapterSummaries"] = extended["extended"]
 
         # 6. 最近一章的结尾段落（用于衔接）
         last_chapter_tail = self._get_last_chapter_tail(project, max_chars=500)
@@ -233,6 +254,25 @@ class ContextBuilder:
                 context["previous_scene_times"] = list(set(prev_times))
             if prev_locations:
                 context["previous_scene_locations"] = list(set(prev_locations))
+
+        # 注入 Memory Agent 的深度记忆结果（Writer 需要更多记忆来丰富写作）
+        memory_result = project.get("_memory_result", {})
+        if memory_result:
+            # MemoryAgent 输出 relevant_memories（不是 relevant_chapters）
+            relevant_memories = memory_result.get("relevant_memories", [])
+            if relevant_memories:
+                context["deepMemory"] = relevant_memories[:8]  # Writer 最多注入8条
+            # 从 character_contexts 构建洞察
+            character_contexts = memory_result.get("character_contexts", [])
+            if character_contexts:
+                context["memoryInsights"] = "角色状态: " + "; ".join(
+                    f"{c.get('name','')}: {c.get('context','')}"
+                    for c in character_contexts[:5]
+                )
+            # 注入相关伏笔记忆
+            relevant_foreshadows = memory_result.get("relevant_foreshadows", [])
+            if relevant_foreshadows:
+                context["memoryForeshadows"] = relevant_foreshadows[:8]
 
         logger.info("[ContextBuilder] 写作上下文构建完成 (目标字数: %d-%d)", min_words, target_total_words)
         return context
@@ -613,3 +653,69 @@ class ContextBuilder:
         if len(text) <= max_chars:
             return text
         return text[-max_chars:]
+
+    def _get_extended_chapter_summaries(
+        self,
+        project: dict[str, Any],
+        recent_count: int = 5,
+        extended_count: int = 10,
+    ) -> dict[str, Any]:
+        """获取扩展章节摘要。
+
+        返回两部分：最近几章的详细摘要 + 更早章节的精简摘要。
+        这样 Writer 既能看到近期细节，也能感知远期脉络。
+
+        Args:
+            project: 项目数据
+            recent_count: 近期详细摘要章数
+            extended_count: 总共返回的章节数（含近期）
+
+        Returns:
+            {"recent": [...], "extended": [...]}
+        """
+        chapters = project.get("chapters", [])
+        if not chapters:
+            return {"recent": [], "extended": []}
+
+        # 取最近的 extended_count 章
+        target = chapters[-extended_count:] if len(chapters) > extended_count else chapters
+        recent_start = max(0, len(target) - recent_count)
+
+        recent_summaries = []
+        extended_summaries = []
+
+        for idx, ch in enumerate(target):
+            summary = {
+                "number": ch.get("number", 0),
+                "title": ch.get("title", ""),
+                "wordCount": ch.get("wordCount", 0),
+            }
+
+            if ch.get("summary"):
+                summary["summary"] = ch["summary"]
+            elif ch.get("text"):
+                # 近期章节保留更多内容，远期章节更精简
+                if idx >= recent_start:
+                    summary["summary"] = truncate_text(ch["text"], 400)
+                else:
+                    summary["summary"] = truncate_text(ch["text"], 150)
+            else:
+                summary["summary"] = ""
+
+            # 保留导演稿目标
+            director = ch.get("directorPlan", {})
+            if director.get("goal"):
+                summary["goal"] = director["goal"]
+
+            # 保留场景模式
+            scenes = ch.get("scenes", [])
+            if scenes:
+                summary["scene_times"] = [s.get("time", "") for s in scenes if s.get("time")]
+                summary["scene_locations"] = [s.get("location", "") for s in scenes if s.get("location")]
+
+            if idx >= recent_start:
+                recent_summaries.append(summary)
+            else:
+                extended_summaries.append(summary)
+
+        return {"recent": recent_summaries, "extended": extended_summaries}
