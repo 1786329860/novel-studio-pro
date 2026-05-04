@@ -128,17 +128,27 @@ class MemoryAgent(BaseAgent):
         """
         project = context.get("project", {})
 
-        # 先用 Embedding 语义搜索找到相关章节
+        # 先用 Embedding 语义搜索找到相关章节（带超时保护，避免卡住整个流水线）
         semantic_results = []
         chapters = project.get("chapters", [])
         if chapters:
-            task_desc = context.get("taskDescription", "生成下一章")
-            last_chapter = chapters[-1] if chapters else {}
-            query_parts = [task_desc]
-            if last_chapter.get("title"):
-                query_parts.append(f"第{last_chapter.get('number','')}章 {last_chapter.get('title','')}")
-            query = " ".join(query_parts)
-            semantic_results = self._semantic_search_chapters(project, query, top_k=5)
+            try:
+                task_desc = context.get("taskDescription", "生成下一章")
+                last_chapter = chapters[-1] if chapters else {}
+                query_parts = [task_desc]
+                if last_chapter.get("title"):
+                    query_parts.append(f"第{last_chapter.get('number','')}章 {last_chapter.get('title','')}")
+                query = " ".join(query_parts)
+                import asyncio
+                semantic_results = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None, self._semantic_search_chapters, project, query, 5
+                    ),
+                    timeout=10,
+                )
+            except Exception as e:
+                logger.warning("[MemoryAgent] 语义搜索失败，跳过: %s", e)
+                semantic_results = []
 
         # 将语义搜索结果注入 context，供 build_messages 使用
         if semantic_results:
