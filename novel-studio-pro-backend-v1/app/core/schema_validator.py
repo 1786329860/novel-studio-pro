@@ -25,58 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 # ======================================================================
-# Schema 定义
-# ======================================================================
-
-# 每个 Agent 的 Schema 定义
-# 格式: {字段名: (类型, 是否必填, 额外校验函数或默认值)}
-# 类型: type 或 tuple[type, ...]
-# 额外校验: None 表示无额外校验，callable 表示校验函数，其他值表示默认值
-
-AGENT_SCHEMAS: dict[str, dict[str, tuple]] = {
-    # 约束生成 Agent
-    "ConstraintAgent": {
-        "must_happen": (list, True, None),
-        "must_not_happen": (list, True, None),
-        "character_allocation": (dict, True, None),
-    },
-    # 导演稿 Agent
-    "DirectorAgent": {
-        "scenes": (list, True, _validate_director_scenes),
-        "chapter_goal": (str, True, None),
-    },
-    # 正文写作 Agent
-    "WriterAgent": {
-        "text": (str, True, _validate_writer_text),
-        "word_count": ((int, float), True, _validate_writer_word_count),
-    },
-    # 质量检查 Agent
-    "ReviewAgent": {
-        "total_score": ((int, float), True, _validate_review_score),
-        "tests": (list, True, _validate_review_tests),
-    },
-    # 状态提取 Agent
-    "StateExtractorAgent": {
-        "state_delta": (dict, True, None),
-    },
-    # 记忆检索 Agent
-    "memory_retrieval": {
-        "relevant_memories": (list, True, None),
-        "token_budget_used": ((int, float), True, None),
-    },
-    # 角色导演 Agent
-    "character_director": {
-        "character_plan": (dict, True, None),
-    },
-    # 伏笔管理 Agent
-    "foreshadow_manager": {
-        "foreshadow_plan": (list, True, None),
-    },
-}
-
-
-# ======================================================================
-# 字段级校验函数
+# 字段级校验函数（必须在 AGENT_SCHEMAS 之前定义，避免 NameError）
 # ======================================================================
 
 def _validate_director_scenes(scenes: Any) -> list[str]:
@@ -186,6 +135,57 @@ def _validate_review_tests(tests: Any) -> list[str]:
             errors.append(f"tests[{i}].score 必须是数字")
 
     return errors
+
+
+# ======================================================================
+# Schema 定义
+# ======================================================================
+
+# 每个 Agent 的 Schema 定义
+# 格式: {字段名: (类型, 是否必填, 额外校验函数或默认值)}
+# 类型: type 或 tuple[type, ...]
+# 额外校验: None 表示无额外校验，callable 表示校验函数，其他值表示默认值
+
+AGENT_SCHEMAS: dict[str, dict[str, tuple]] = {
+    # 约束生成 Agent
+    "ConstraintAgent": {
+        "must_happen": (list, True, None),
+        "must_not_happen": (list, True, None),
+        "character_allocation": (dict, True, None),
+    },
+    # 导演稿 Agent
+    "DirectorAgent": {
+        "scenes": (list, True, _validate_director_scenes),
+        "chapter_goal": (str, True, None),
+    },
+    # 正文写作 Agent
+    "WriterAgent": {
+        "text": (str, True, _validate_writer_text),
+        "word_count": ((int, float), True, _validate_writer_word_count),
+    },
+    # 质量检查 Agent
+    "ReviewAgent": {
+        "total_score": ((int, float), True, _validate_review_score),
+        "tests": (list, True, _validate_review_tests),
+    },
+    # 状态提取 Agent
+    "StateExtractorAgent": {
+        "state_delta": (dict, True, None),
+    },
+    # 记忆检索 Agent
+    "memory_retrieval": {
+        "relevant_memories": (list, True, None),
+        "token_budget_used": ((int, float), True, None),
+    },
+    # 角色导演 Agent
+    "character_director": {
+        "character_plan": (dict, True, None),
+    },
+    # 伏笔管理 Agent
+    "foreshadow_manager": {
+        "foreshadow_plan": (list, True, None),
+    },
+}
 
 
 # ======================================================================

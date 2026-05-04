@@ -144,7 +144,7 @@ class ContextBuilder:
         context["min_words"] = min_words
 
         # Add anti-repetition context
-        recent = self._get_recent_chapter_summaries(project, max_chapters=2)
+        recent = self._get_recent_chapter_summaries(project, max_count=2)
         if recent:
             all_times = []
             all_locations = []
@@ -243,7 +243,7 @@ class ContextBuilder:
         context["max_words"] = target_total_words  # max_words = target_total_words (用户设置的最大值)
 
         # Add anti-repetition context from recent chapters
-        recent = self._get_recent_chapter_summaries(project, max_chapters=2)
+        recent = self._get_recent_chapter_summaries(project, max_count=2)
         if recent:
             prev_times = []
             prev_locations = []
