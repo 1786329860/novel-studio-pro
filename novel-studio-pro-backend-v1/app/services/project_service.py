@@ -242,7 +242,8 @@ class ProjectService:
     def delete_chapter(self, project_id: str, chapter_id: str) -> dict[str, Any]:
         """删除已确认入库的章节。
 
-        同时清理该章节相关的记忆摘要和状态快照。
+        同时清理该章节相关的记忆摘要、状态快照、伏笔、事件账本，
+        并更新状态面板。
         """
         project = self.get_project(project_id)
         chapters = project.get("chapters", [])
@@ -257,22 +258,54 @@ class ProjectService:
             # 删除章节
             current["chapters"] = [c for c in current.get("chapters", []) if c.get("id") != chapter_id]
 
-            # 重新编号剩余章节
+            # 重新编号剩余章节，同时更新事件账本中的章节号
             for i, ch in enumerate(current["chapters"]):
-                ch["number"] = i + 1
+                old_number = ch.get("number", i + 1)
+                new_number = i + 1
+                ch["number"] = new_number
+
+            # 更新事件账本中大于被删章节号的章节号（因为重新编号了）
+            events = current.get("events", [])
+            for evt in events:
+                evt_ch = evt.get("chapter", 0)
+                if isinstance(evt_ch, int) and evt_ch > chapter_number:
+                    evt["chapter"] = evt_ch - 1
+                # 更新时间字段中的章节号
+                evt_time = evt.get("time", "")
+                if evt_time and f"第{chapter_number}章" in evt_time:
+                    pass  # 保留原始时间记录，不做修改
 
             # 清理相关的记忆摘要
             memory = current.get("memory", {})
             summaries = memory.get("chapterSummaries", [])
             memory["chapterSummaries"] = [s for s in summaries if s.get("chapter") != chapter_number]
+            # 更新摘要中大于被删章节号的章节号
+            for s in memory["chapterSummaries"]:
+                s_ch = s.get("chapter", 0)
+                if isinstance(s_ch, int) and s_ch > chapter_number:
+                    s["chapter"] = s_ch - 1
 
             # 清理相关的状态快照
             snapshots = memory.get("stateSnapshots", [])
             memory["stateSnapshots"] = [s for s in snapshots if s.get("chapter") != chapter_number]
+            # 更新快照中大于被删章节号的章节号
+            for s in memory["stateSnapshots"]:
+                s_ch = s.get("chapter", 0)
+                if isinstance(s_ch, int) and s_ch > chapter_number:
+                    s["chapter"] = s_ch - 1
 
             # 清理该章节埋下的伏笔
             foreshadows = current.get("foreshadows", [])
             current["foreshadows"] = [f for f in foreshadows if f.get("plantedChapter") != chapter_number]
+            # 更新伏笔中大于被删章节号的 plantedChapter
+            for f in current["foreshadows"]:
+                f_ch = f.get("plantedChapter", 0)
+                if isinstance(f_ch, int) and f_ch > chapter_number:
+                    f["plantedChapter"] = f_ch - 1
+                # 同样更新 resolvedChapter
+                r_ch = f.get("resolvedChapter", 0)
+                if isinstance(r_ch, int) and r_ch > chapter_number:
+                    f["resolvedChapter"] = r_ch - 1
 
             # 更新项目统计
             current["currentChapterNumber"] = len(current["chapters"])
@@ -282,8 +315,19 @@ class ProjectService:
             # 更新状态面板
             status = current.setdefault("status", {})
             total_target = int(current.get("totalTargetChapters", 120) or 120)
-            status["currentChapter"] = len(current["chapters"])
-            status["mainProgress"] = min(100, int(len(current["chapters"]) / total_target * 100))
+            new_chapter_count = len(current["chapters"])
+            last_chapter = current["chapters"][-1] if current["chapters"] else {}
+            status.update({
+                "currentChapter": new_chapter_count,
+                "currentChapterTitle": f"第 {new_chapter_count} 章 · {last_chapter.get('title', '')}" if last_chapter else "",
+                "mainProgress": min(100, int(new_chapter_count / total_target * 100)),
+                "foreshadowTotal": len(current.get("foreshadows", [])),
+                "foreshadowCount": len(current.get("foreshadows", [])),
+                "foreshadowResolved": len([f for f in current.get("foreshadows", []) if f.get("status") in {"已回收", "已解决"}]),
+                "activeCharacters": len([c for c in current.get("characters", []) if float(c.get("dropoutRisk", 1)) < 0.5]),
+                "totalCharacters": len(current.get("characters", [])),
+                "lastAnalyzedAt": now_iso(),
+            })
 
             return {"deleted": True, "chapterNumber": chapter_number}
 
