@@ -1019,7 +1019,7 @@ app.addEventListener('click', async (event) => {
         }
         showToast('章节已重命名。');
       }
-      if (action === 'deleteChapter') {
+      if (chAction === 'deleteChapter') {
         const chapterTitle = chapter.title || `第${chapter.number}章`;
         const confirmed = confirm(`确定要删除「${chapterTitle}」吗？\n\n删除后不可恢复，章节编号会自动重新排列。`);
         if (confirmed) {
