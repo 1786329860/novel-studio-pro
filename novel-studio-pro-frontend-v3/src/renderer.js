@@ -981,7 +981,7 @@ app.addEventListener('click', async (event) => {
       item.addEventListener('mouseleave', () => { item.style.background = ''; });
     });
     document.body.appendChild(dropdown);
-    dropdown.addEventListener('click', (e) => {
+    dropdown.addEventListener('click', async (e) => {
       const item = e.target.closest('[data-ch-action]');
       if (!item) return;
       const chAction = item.dataset.chAction;
