@@ -322,6 +322,25 @@ export const api = {
     );
   },
 
+  async deleteChapter(projectId, chapterId) {
+    const data = await request(`/api/projects/${projectId}/chapters/${chapterId}`, { method: 'DELETE' });
+    if (data.deleted) {
+      updateState((state) => {
+        const project = state.projects.find((p) => p.id === projectId);
+        if (project) {
+          project.chapters = project.chapters.filter((c) => c.id !== chapterId);
+          project.currentChapterNumber = project.chapters.length;
+          project.wordCount = project.chapters.reduce((sum, c) => sum + (c.wordCount || 0), 0);
+          if (state.viewingChapterIndex >= project.chapters.length) {
+            state.viewingChapterIndex = project.chapters.length - 1;
+          }
+        }
+        return state;
+      });
+    }
+    return data;
+  },
+
   async analyzeState(projectId) {
     return callWithFallback(
       () => mockApi.analyzeState(projectId),

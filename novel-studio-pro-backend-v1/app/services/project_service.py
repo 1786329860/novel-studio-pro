@@ -239,6 +239,52 @@ class ProjectService:
 
         return store.update(mut)
 
+    def delete_chapter(self, project_id: str, chapter_id: str) -> dict[str, Any]:
+        """删除已确认入库的章节。
+
+        同时清理该章节相关的记忆摘要和状态快照。
+        """
+        project = self.get_project(project_id)
+        chapters = project.get("chapters", [])
+        target = next((c for c in chapters if c.get("id") == chapter_id), None)
+        if not target:
+            raise HTTPException(status_code=404, detail="章节不存在或未确认入库")
+
+        chapter_number = target.get("number", 0)
+
+        def mut(data: dict[str, Any]) -> dict[str, Any]:
+            current = data["projects"][project_id]
+            # 删除章节
+            current["chapters"] = [c for c in current.get("chapters", []) if c.get("id") != chapter_id]
+
+            # 重新编号剩余章节
+            for i, ch in enumerate(current["chapters"]):
+                ch["number"] = i + 1
+
+            # 清理相关的记忆摘要
+            memory = current.get("memory", {})
+            summaries = memory.get("chapterSummaries", [])
+            memory["chapterSummaries"] = [s for s in summaries if s.get("chapter") != chapter_number]
+
+            # 清理相关的状态快照
+            snapshots = memory.get("stateSnapshots", [])
+            memory["stateSnapshots"] = [s for s in snapshots if s.get("chapter") != chapter_number]
+
+            # 更新项目统计
+            current["currentChapterNumber"] = len(current["chapters"])
+            current["wordCount"] = sum(c.get("wordCount", 0) for c in current["chapters"])
+            current["updatedAt"] = now_iso()
+
+            # 更新状态面板
+            status = current.setdefault("status", {})
+            total_target = int(current.get("totalTargetChapters", 120) or 120)
+            status["currentChapter"] = len(current["chapters"])
+            status["mainProgress"] = min(100, int(len(current["chapters"]) / total_target * 100))
+
+            return {"deleted": True, "chapterNumber": chapter_number}
+
+        return store.update(mut)
+
     def analyze_state(self, project_id: str) -> dict[str, Any]:
         project = self.get_project(project_id)
         report = ai_orchestrator.analyze_project_state(project)

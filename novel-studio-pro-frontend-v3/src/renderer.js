@@ -972,6 +972,8 @@ app.addEventListener('click', async (event) => {
       <div class="chapter-dropdown-item" data-ch-action="exportMd" style="padding:10px 16px;cursor:pointer;font-size:14px;color:var(--text,#333);transition:background 0.15s;">导出为 Markdown</div>
       <div class="chapter-dropdown-item" data-ch-action="copyText" style="padding:10px 16px;cursor:pointer;font-size:14px;color:var(--text,#333);transition:background 0.15s;">复制正文</div>
       <div class="chapter-dropdown-item" data-ch-action="rename" style="padding:10px 16px;cursor:pointer;font-size:14px;color:var(--text,#333);transition:background 0.15s;">重命名章节</div>
+      <div style="height:1px;background:var(--line,#eee);margin:4px 12px;"></div>
+      <div class="chapter-dropdown-item" data-ch-action="deleteChapter" style="padding:10px 16px;cursor:pointer;font-size:14px;color:#e74c3c;transition:background 0.15s;">删除章节</div>
     `;
     // 悬停效果
     dropdown.querySelectorAll('.chapter-dropdown-item').forEach((item) => {
@@ -1016,6 +1018,22 @@ app.addEventListener('click', async (event) => {
           }
         }
         showToast('章节已重命名。');
+      }
+      if (action === 'deleteChapter') {
+        const chapterTitle = chapter.title || `第${chapter.number}章`;
+        const confirmed = confirm(`确定要删除「${chapterTitle}」吗？\n\n删除后不可恢复，章节编号会自动重新排列。`);
+        if (confirmed) {
+          try {
+            await api.deleteChapter(projectId, chapter.id);
+            showToast('章节已删除。');
+            dropdown.remove();
+            document.removeEventListener('click', closeDropdown, true);
+            // 刷新页面
+            render();
+          } catch (err) {
+            showToast('删除失败：' + (err.message || '未知错误'));
+          }
+        }
       }
     });
     // 点击外部关闭

@@ -405,6 +405,11 @@ def confirm_chapter(project_id: str, chapter_id: str):
     return project_service.confirm_chapter(project_id, chapter_id)
 
 
+@router.delete("/{project_id}/chapters/{chapter_id}")
+def delete_chapter(project_id: str, chapter_id: str):
+    return project_service.delete_chapter(project_id, chapter_id)
+
+
 @router.post("/{project_id}/state/analyze")
 def analyze_state(project_id: str):
     return project_service.analyze_state(project_id)
