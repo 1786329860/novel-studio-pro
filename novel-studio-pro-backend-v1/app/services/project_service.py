@@ -270,6 +270,10 @@ class ProjectService:
             snapshots = memory.get("stateSnapshots", [])
             memory["stateSnapshots"] = [s for s in snapshots if s.get("chapter") != chapter_number]
 
+            # 清理该章节埋下的伏笔
+            foreshadows = current.get("foreshadows", [])
+            current["foreshadows"] = [f for f in foreshadows if f.get("plantedChapter") != chapter_number]
+
             # 更新项目统计
             current["currentChapterNumber"] = len(current["chapters"])
             current["wordCount"] = sum(c.get("wordCount", 0) for c in current["chapters"])
