@@ -1024,7 +1024,7 @@ app.addEventListener('click', async (event) => {
         const confirmed = confirm(`确定要删除「${chapterTitle}」吗？\n\n删除后不可恢复，章节编号会自动重新排列。`);
         if (confirmed) {
           try {
-            await api.deleteChapter(projectId, chapter.id);
+            await api.deleteChapter(project.id, chapter.id);
             showToast('章节已删除。');
             dropdown.remove();
             document.removeEventListener('click', closeDropdown, true);
