@@ -621,6 +621,9 @@ class StateMerger:
             summary: 变更摘要（会被修改）
         """
         events = project.get("events", [])
+        if not isinstance(events, list):
+            events = []
+            project["events"] = events
 
         for event in delta.get("new_events", []):
             events.append({
@@ -646,6 +649,9 @@ class StateMerger:
             summary: 变更摘要（会被修改）
         """
         timeline = project.get("timeline", [])
+        if not isinstance(timeline, list):
+            timeline = []
+            project["timeline"] = timeline
 
         for update in delta.get("timeline_updates", []):
             timeline.append(update)
